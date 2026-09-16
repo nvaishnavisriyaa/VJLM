@@ -1,0 +1,26 @@
+# Approved source registry — the authoritative list of what VJLM may ingest.
+#
+# Populated in Phase 1 by browser-inspecting the official VNRVJIET site and
+# capturing canonical URLs. Every entry must be classified before mass crawling.
+#
+# visibility: PUBLIC | FUTURE_LOGIN | INTERNAL_RESTRICTED | OUT_OF_SCOPE
+#   Phase 1 ingests PUBLIC only.
+version: 1
+
+sources: []
+
+# Example shape (do not ingest until verified in the browser):
+#
+# - source_id: acad-regulations-btech
+#   canonical_url: "https://..."
+#   category: academic_regulations
+#   department: null
+#   document_type: pdf            # html | pdf | table | download
+#   audience: [student, faculty]
+#   visibility: PUBLIC
+#   update_frequency: yearly      # drives the refresh interval for this source
+#   parser_type: pdf_text
+#   authority_level: primary      # primary | secondary
+#   fine_tune_usage: representative_qa_only
+#   rag_usage: full_source
+#   active: true

@@ -1,0 +1,38 @@
+# Crawl scope and change-detection policy. See Phase 3 of the plan.
+version: 1
+
+domain: "vnrvjiet.ac.in"
+
+scope:
+  # Phase 1 is public data only. Never crawl authenticated or private areas.
+  allow_public_only: true
+  follow_subdomains: false
+  max_depth_from_registry_entry: 2
+  respect_robots_txt: true
+  request_delay_seconds: 1.0
+  user_agent: "VJLM-research-crawler (VNRVJIET academic project)"
+
+discovery:
+  use_registry: true          # approved source registry is authoritative
+  use_sitemap: true           # discovery signal, not a guarantee
+  recursive_within_allowed_sections: true
+  full_domain_crawl: false    # not for Phase 1 — noisy
+
+fetch:
+  http_first: true
+  headless_fallback: true     # only for pages plain HTTP cannot extract
+  keep_raw_snapshot: true     # so an improved parser can reprocess without refetching
+
+change_detection:
+  # Order matters. ETag/Last-Modified are cheap hints; the normalized-content
+  # hash is the real fingerprint.
+  use_etag: true
+  use_last_modified: true
+  fingerprint: "normalized_content_hash"
+  # Hashing raw HTML would make a CSS redesign look like a knowledge change
+  # and force pointless re-embedding. Do not change this to raw_html.
+
+anomaly_guards:
+  min_extracted_chars: 200        # below this, treat as a parser failure
+  max_content_shrink_ratio: 0.5   # sudden large shrink is suspicious
+  fail_open: true                 # a failed fetch must never delete last-known-good knowledge

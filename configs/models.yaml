@@ -1,0 +1,33 @@
+# Model selections. Deliberately UNSET.
+#
+# Per the Phase 6 / 7 / 9 gates, these are filled in only after a measured
+# comparison on the VJLM benchmark, with the decision recorded in DECISIONS.md.
+# Do not populate a field here from a leaderboard, a blog post or a default.
+version: 1
+
+embedding:
+  id: null            # decided in Phase 6 -> RAG-EMBED-001
+  revision: null
+  dim: null
+  normalize: null
+
+reranker:
+  enabled: false      # only if the measured quality gain justifies the latency
+  id: null
+
+generator:
+  base_id: null       # decided in Phase 7 -> SLM-001
+  revision: null
+  chat_template: null
+  context_length: null
+  license: null
+
+finetune:
+  method: null        # decided in Phase 8 -> FT-001 (lora | qlora | full | none)
+  adapter_path: null
+
+quantization:
+  format: null        # decided in Phase 9 -> QUANT-001
+  quant_type: null    # e.g. Q4_K_M, Q5_K_M, Q6_K, Q8_0
+  runtime: null       # e.g. llama.cpp + version
+  threads: null       # set from measurement, not from core count

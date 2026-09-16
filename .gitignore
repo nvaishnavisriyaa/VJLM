@@ -1,0 +1,48 @@
+# Raw crawl snapshots — large, regenerable, and may contain full page copies
+ingestion/snapshots/**
+!ingestion/snapshots/.gitkeep
+ingestion/state/**
+!ingestion/state/.gitkeep
+
+# Model weights, adapters and quantized builds
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+training/adapters/**
+training/checkpoints/**
+quantization/builds/**
+
+# Vector indexes
+rag/index/**
+!rag/index/.gitkeep
+*.faiss
+*.duckdb
+*.sqlite3
+
+# Experiment outputs — keep the recorded results, not the bulk artifacts
+experiments/**/artifacts/**
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

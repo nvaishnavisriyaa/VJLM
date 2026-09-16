@@ -1,0 +1,34 @@
+# Canonical paths. Code reads these — never hard-code a path or a model name.
+version: 1
+
+root: "C:/VJLM"
+
+ingestion:
+  registry: "ingestion/sources.yaml"
+  snapshots: "ingestion/snapshots"
+  state: "ingestion/state/sync_state.jsonl"
+
+data_catalog: "data_catalog/catalog.csv"
+
+preprocessing:
+  rag_chunks: "preprocessing/out/rag_chunks.jsonl"
+  finetune_dataset: "preprocessing/out/finetune"
+
+rag:
+  index: "rag/index"
+
+evaluation:
+  questions: "evaluation/questions.jsonl"
+  gold_sources: "evaluation/gold_sources.jsonl"
+  # Never used to tune chunking, retrieval, model or quantization settings.
+  heldout: "evaluation/heldout.jsonl"
+
+training:
+  adapters: "training/adapters"
+  notebooks: "training/notebooks"
+
+quantization:
+  builds: "quantization/builds"
+  results: "quantization/results.csv"
+
+experiments: "experiments"
