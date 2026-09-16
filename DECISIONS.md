@@ -66,6 +66,8 @@ ID prefixes: `FOUND-` foundation, `SCOPE-`, `DATA-`, `INGEST-`, `PREP-`, `EVAL-`
 - **Rejected:** Local CPU fine-tuning — impractically slow for 7B-class models. Local iGPU — no CUDA, ~1 GB VRAM.
 - **Constraints this imposes:** Colab sessions are time-limited and can be reclaimed, so training must checkpoint to Drive and be resumable. Colab GPU VRAM (commonly ~15 GB on the free T4) caps the practical method at LoRA/QLoRA rather than full fine-tuning — to be confirmed in Phase 8.
 - **Revisit trigger:** Institutional GPU access becomes available, or a Phase 8 experiment shows LoRA/QLoRA gains are insufficient.
+- **Operating arrangement (2026-09-16):** Colab is driven through the in-app browser. The project owner signs in; the assistant never handles credentials. The assistant then opens the notebook, runs cells and reads output. Implications: every training run must be reproducible from a notebook committed under `training/notebooks/`, not from ad-hoc cells typed into a session, and checkpoints must be written to Drive so a reclaimed runtime does not lose the run.
+- **Runtime boundary restated:** Colab is used at Phase 8 (fine-tuning) and optionally Phase 9 (fp16 merge / GGUF conversion). It must never appear in the serving path.
 
 ## FOUND-004 — Base model family to shortlist
 
@@ -75,3 +77,50 @@ ID prefixes: `FOUND-` foundation, `SCOPE-`, `DATA-`, `INGEST-`, `PREP-`, `EVAL-`
 - **Candidates:** Hugging Face open-weight instruct models in the practical local size range — Mistral and Llama families named as a starting point by the project owner, plus other current candidates to be identified by browser research.
 - **Why not decided:** Per the Phase 7 gate, the base model is selected **after** the benchmark (Phase 5) and baseline RAG (Phase 6) exist, by running the held-out VJLM questions against each candidate with identical retrieved context on this hardware. Naming a model now would be exactly the popularity-driven choice the plan forbids.
 - **Next step:** At Phase 7, browser-verify each candidate's official model card for license, context length, tokenizer/chat template, fine-tuning support and current llama.cpp/GGUF support. Record versions and URLs here.
+
+---
+
+## INGEST-001 — No-API constraint on the data pipeline
+
+- **Status:** decided (constraint set by the project owner, 2026-09-16)
+- **Requirements:** The ingestion pipeline must be **dynamic, automatic and API-free**. It keeps itself current with the public VNRVJIET website without any external service in the loop and without a human triggering it.
+
+### Revision, 2026-09-16 — free third-party services permitted, LLM APIs not
+
+The original entry banned all third-party services. The project owner has relaxed this: **free third-party services are acceptable; hosted LLM APIs are not.** The constraint is now tiered by *where in the system* the dependency sits, because cost is not the only thing that matters — a free call in the query path still breaks local operation.
+
+**Tier 1 — forbidden everywhere, at any price**
+
+Hosted LLM APIs for generation (OpenAI, Gemini, Anthropic, Groq, any hosted inference endpoint). This is the project's founding non-negotiable. It applies at build time too: using a hosted LLM to generate fine-tuning QA pairs would make the model's behaviour derive from a service VJLM cannot reproduce or defend.
+
+**Tier 2 — forbidden at runtime regardless of free tier**
+
+Hosted embedding and reranking APIs. The reason is structural, not budgetary: **the embedding model runs on every user query**, not only when the index is built. A hosted embedding call would mean VJLM stops answering when the internet drops, when the free tier is exhausted, or when the provider retires the endpoint — and the index would be permanently tied to a vector space we cannot regenerate. Embeddings stay local.
+
+**Tier 3 — permitted at build time when free, as accelerators with a local fallback**
+
+Crawl and extraction helpers (e.g. free-tier readability/extraction endpoints), sitemap and link-discovery utilities, and search-based discovery to cross-check coverage. Permitted under three conditions:
+
+1. The pipeline must still complete **without** the service. Every such helper is an optimisation over a local path that works on its own.
+2. It touches only public VNRVJIET data. Nothing private is ever sent out.
+3. It is recorded here with its free-tier limits and the date checked.
+
+**Why the fallback condition is not bureaucracy:** VJLM has to keep running after the current student team graduates. Free tiers get rate-limited, change terms, or disappear. A pipeline whose only discovery path is someone's free API becomes unmaintainable the moment that key expires, and the people left holding it will not know why the knowledge base went stale.
+
+### What "automatic" requires
+
+Automatic means no human step in steady state. Concretely:
+
+1. A scheduler triggers refresh per source, at an interval matched to that source's `update_frequency` — an exam schedule is not recrawled on the same cadence as the college history page.
+2. Each run reconciles **new / changed / unchanged / disappeared** without supervision.
+3. State is durable: last success, ETag, normalized hash, parser version, document version per source. A run resumes rather than restarting.
+4. Failures are logged and retried, and **never** delete last-known-good knowledge.
+5. Index sync (upsert and retire) happens in the same run. A refresh that updates snapshots but leaves the index stale is a silent failure.
+
+### Consequences accepted
+
+- Discovery quality now rests entirely on the registry plus sitemap plus scoped recursion. If the site has no sitemap or a stale one, that is a real coverage risk, to be measured in Phase 3 rather than assumed away.
+- JavaScript-rendered pages need a **local** headless browser (a local browser is not an API). This is heavier and slower, so it stays a fallback for pages plain HTTP cannot extract.
+- All extraction is deterministic parsing, which means parser failures are our problem to detect. Hence the anomaly guards in `configs/ingestion.yaml`.
+
+- **Revisit trigger:** The institution offers an official data feed, or measured sitemap/link coverage in Phase 3 proves inadequate for a required category.

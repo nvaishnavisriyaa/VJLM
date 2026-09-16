@@ -1,6 +1,30 @@
 # Crawl scope and change-detection policy. See Phase 3 of the plan.
 version: 1
 
+# HARD CONSTRAINT (see INGEST-001 in DECISIONS.md).
+# The pipeline is dynamic and automatic. External dependencies are tiered by
+# WHERE they sit, not by what they cost.
+external_services:
+  # Tier 1 — forbidden everywhere, at any price. Founding constraint.
+  hosted_llm_apis: forbidden
+
+  # Tier 2 — forbidden at runtime regardless of free tier. The embedding model
+  # runs on EVERY user query, so a hosted call would break local operation and
+  # tie the index to a vector space we cannot regenerate.
+  hosted_embedding_apis: forbidden
+  hosted_reranker_apis: forbidden
+
+  # Tier 3 — free third-party helpers allowed at BUILD TIME only, and only as
+  # accelerators. The pipeline must still complete without them.
+  free_buildtime_helpers: allowed
+  require_local_fallback: true      # do not remove; this is what keeps VJLM
+                                    # maintainable after the free tier dies
+  public_data_only: true            # never send private data to any service
+
+  # Every Tier 3 helper actually used must be listed here with its free-tier
+  # limits and the date checked, and recorded in DECISIONS.md.
+  helpers_in_use: []
+
 domain: "vnrvjiet.ac.in"
 
 scope:
@@ -36,3 +60,25 @@ anomaly_guards:
   min_extracted_chars: 200        # below this, treat as a parser failure
   max_content_shrink_ratio: 0.5   # sudden large shrink is suspicious
   fail_open: true                 # a failed fetch must never delete last-known-good knowledge
+
+schedule:
+  # Automatic means no human step in steady state. Interval is per source,
+  # driven by that source's update_frequency in the registry — not one global
+  # cadence for everything.
+  enabled: true
+  driver: "windows_task_scheduler"
+  intervals_by_update_frequency:
+    daily: "PT6H"
+    weekly: "P1D"
+    monthly: "P7D"
+    yearly: "P30D"
+    unknown: "P7D"
+  resume_from_state: true       # a run continues; it does not restart from zero
+
+sync:
+  # A refresh that updates snapshots but leaves the index stale is a silent
+  # failure. Index sync happens in the same run as the fetch.
+  upsert_changed: true
+  retire_disappeared: true
+  retry_transient_failures: 3
+  never_delete_on_failure: true
