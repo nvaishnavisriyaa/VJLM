@@ -32,12 +32,33 @@ ROLE_BOOST = {
 }
 
 
+ENRICHED = os.path.join(ROOT, "preprocessing", "out", "rag_chunks_enriched.jsonl")
+
+
 class Retriever:
     def __init__(self):
         with open(os.path.join(IDX, "bm25.pkl"), "rb") as f:
             blob = pickle.load(f)
         self.bm25 = blob["bm25"]
         self.meta = blob["meta"]
+        # Merge Layer-1 enrichment (department, academic_year, PII flag,
+        # duplicate marker) by chunk_id. Metadata only - embeddings untouched.
+        if os.path.exists(ENRICHED):
+            extra = {}
+            with open(ENRICHED, encoding="utf-8") as f:
+                for line in f:
+                    e = json.loads(line)
+                    extra[e["chunk_id"]] = e
+            merged = 0
+            for r in self.meta:
+                e = extra.get(r["chunk_id"])
+                if e:
+                    for k in ("department", "academic_year", "regulation",
+                              "has_pii", "duplicate_of"):
+                        if k in e:
+                            r[k] = e[k]
+                    merged += 1
+            self.enriched = merged
         self.dense = None
         self.embed = None
         dpath = os.path.join(IDX, "dense.npy")
@@ -58,17 +79,24 @@ class Retriever:
         aud = row.get("audience", "student|faculty").split("|")
         return role in aud or "guest" == role
 
-    def search(self, query, role="student", topk=6, pool=60):
-        # --- lexical ---
-        lex = self.bm25.search(query, topk=pool)
+    def search(self, query, role="student", topk=6, pool=60, mode="hybrid"):
+        """mode: 'bm25' | 'dense' | 'hybrid'. Falls back to bm25 if dense is absent."""
+        if self.dense is None:
+            mode = "bm25"
+        w_lex = {"bm25": 1.0, "dense": 0.0, "hybrid": 0.5}[mode]
+        w_dns = {"bm25": 0.0, "dense": 1.0, "hybrid": 0.5}[mode]
         scores = defaultdict(float)
-        if lex:
-            mx = max(s for _, s in lex) or 1.0
-            for i, s in lex:
-                scores[i] += 0.5 * (s / mx)
+
+        # --- lexical ---
+        if w_lex:
+            lex = self.bm25.search(query, topk=pool)
+            if lex:
+                mx = max(s for _, s in lex) or 1.0
+                for i, s in lex:
+                    scores[i] += w_lex * (s / mx)
 
         # --- dense (if available) ---
-        if self.dense is not None and self.embed is not None:
+        if w_dns and self.dense is not None and self.embed is not None:
             qv = list(self.embed.embed([query]))[0]
             qv = self.np.asarray(qv, dtype="float32")
             qv /= (self.np.linalg.norm(qv) + 1e-9)
@@ -76,7 +104,7 @@ class Retriever:
             top = self.np.argpartition(-sims, min(pool, len(sims) - 1))[:pool]
             mx = float(sims[top].max()) or 1.0
             for i in top:
-                scores[int(i)] += 0.5 * float(sims[i]) / mx
+                scores[int(i)] += w_dns * float(sims[i]) / mx
 
         # --- RBAC filter BEFORE ranking is returned ---
         boosts = ROLE_BOOST.get(role, {})
@@ -88,10 +116,12 @@ class Retriever:
             ranked.append((s * boosts.get(row.get("category", ""), 1.0), i))
         ranked.sort(reverse=True)
 
-        # one chunk per document keeps citations diverse
+        # one chunk per document keeps citations diverse; duplicates dropped
         seen, out = set(), []
         for s, i in ranked:
             row = self.meta[i]
+            if row.get("duplicate_of"):
+                continue
             if row["source_id"] in seen:
                 continue
             seen.add(row["source_id"])
@@ -116,10 +146,22 @@ ROLE_NOTE = {
 
 def build_prompt(query, chunks, role="student"):
     """Assembly order: system -> role -> context -> question -> output rules.
-    Access control is NOT in the prompt; it already happened in retrieval."""
-    ctx = "\n\n".join(
-        "[{}] {} (page {})\n{}".format(i + 1, c["url"], c["page"], c["text"][:900])
-        for i, c in enumerate(chunks))
+    Access control is NOT in the prompt; it already happened in retrieval.
+    PII is redacted here so the model never sees emails or phone numbers."""
+    from preprocessing.enrich import redact
+    parts = []
+    for i, c in enumerate(chunks):
+        tag = []
+        if c.get("department"):
+            tag.append(c["department"])
+        if c.get("regulation"):
+            tag.append(c["regulation"])
+        if c.get("academic_year"):
+            tag.append(c["academic_year"])
+        meta = (" [" + ", ".join(tag) + "]") if tag else ""
+        parts.append("[{}] {} (page {}){}\n{}".format(
+            i + 1, c["url"], c["page"], meta, redact(c["text"][:900])))
+    ctx = "\n\n".join(parts)
     return [
         {"role": "system", "content": SYSTEM + "\n" + ROLE_NOTE.get(role, "")},
         {"role": "user", "content": "CONTEXT:\n{}\n\nQUESTION: {}".format(ctx, query)},

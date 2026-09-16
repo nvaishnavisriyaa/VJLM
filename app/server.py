@@ -37,16 +37,30 @@ def get_retriever():
     return _ret
 
 
-def get_llm():
-    global _llm
-    if _llm is None:
-        path, kind = pick_model()
-        if not path:
-            return None, None
-        from llama_cpp import Llama
-        _llm = (Llama(model_path=path, n_ctx=4096, n_threads=8,
-                      verbose=False, chat_format="chatml"), kind, os.path.basename(path))
-    return _llm[0], _llm
+LLAMA_URL = os.environ.get("VJLM_LLAMA_URL", "http://127.0.0.1:8080")
+
+
+def llama_chat(messages, max_tokens=420, temperature=0.2):
+    """Talk to a local llama-server (official build, ~39x faster than the
+    generic llama-cpp-python wheel on this CPU - see QUANT/RUNTIME bench).
+    Local HTTP to 127.0.0.1 is not an external API."""
+    import urllib.request, urllib.error
+    body = json.dumps({"messages": messages, "max_tokens": max_tokens,
+                       "temperature": temperature, "stream": False}).encode()
+    req = urllib.request.Request(LLAMA_URL + "/v1/chat/completions", data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        d = json.loads(r.read())
+    return d["choices"][0]["message"]["content"].strip()
+
+
+def llama_up():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(LLAMA_URL + "/health", timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
 
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
@@ -135,7 +149,8 @@ def status():
     r = get_retriever()
     path, kind = pick_model()
     return jsonify({"chunks": len(r.meta), "dense": r.dense is not None,
-                    "model": os.path.basename(path) if path else None, "kind": kind})
+                    "model": os.path.basename(path) if path else None,
+                    "kind": kind, "llama_server": llama_up()})
 
 
 @app.route("/api/ask", methods=["POST"])
@@ -157,13 +172,12 @@ def ask():
     msgs = build_prompt(q, chunks, role)
     t1 = time.time()
     with _lock:
-        llm, _ = get_llm()
-        if llm is None:
-            answer = ("(No model loaded - retrieval only.)\n\nMost relevant passage:\n\n"
-                      + chunks[0]["text"][:700])
+        if llama_up():
+            answer = llama_chat(msgs)
         else:
-            out = llm.create_chat_completion(messages=msgs, max_tokens=420, temperature=0.2)
-            answer = out["choices"][0]["message"]["content"].strip()
+            answer = ("(llama-server is not running - retrieval only.)\n\n"
+                      "Start it with runtime/start_llama.cmd\n\nMost relevant passage:\n\n"
+                      + chunks[0]["text"][:700])
     t_gen = round(time.time() - t1, 2)
 
     return jsonify({
@@ -175,8 +189,9 @@ def ask():
 
 
 if __name__ == "__main__":
-    print("loading retriever + model ...", flush=True)
+    print("loading retriever ...", flush=True)
     get_retriever()
     p, k = pick_model()
     print("model:", os.path.basename(p) if p else "NONE", "|", k)
+    print("llama-server:", "UP" if llama_up() else "DOWN (run runtime/start_llama.cmd)")
     app.run(host="127.0.0.1", port=7860, threaded=True)
