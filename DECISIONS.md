@@ -124,3 +124,22 @@ Automatic means no human step in steady state. Concretely:
 - All extraction is deterministic parsing, which means parser failures are our problem to detect. Hence the anomaly guards in `configs/ingestion.yaml`.
 
 - **Revisit trigger:** The institution offers an official data feed, or measured sitemap/link coverage in Phase 3 proves inadequate for a required category.
+
+---
+
+## INGEST-002 — `docs.vnrvjiet.ac.in` disallows all crawlers
+
+- **Status:** **BLOCKED — needs a decision by the project owner**
+- **Date:** 2026-09-16
+- **Finding:** `https://docs.vnrvjiet.ac.in/robots.txt` serves `User-agent: *` / `Disallow: /`. That subdomain hosts **1,252 of the 1,923 PDFs** referenced by the site — regulations, academic calendars, Academic Council minutes, syllabus books. It is where the majority of VJLM's authoritative knowledge lives.
+- **Conflict:** `configs/ingestion.yaml` sets `respect_robots_txt: true`. Honouring that excludes about 65% of the corpus and guts the answer quality VJLM is being built for. Ignoring it means running an unauthorised crawler against institutional infrastructure.
+
+### Options
+
+1. **Get written permission from VNRVJIET IT / the webmaster** (recommended). This is an official, faculty-sponsored project against the institution's own public content. A short written approval — ideally naming the crawler's user-agent, the rate limit and the scope — resolves the conflict cleanly and is defensible in the project report. If they can add a crawler-specific `Allow` rule to that `robots.txt`, better still: then the pipeline stays compliant with no exception logic.
+2. **Restrict Phase 1 to `www` only** — the 671 `/__l5e/` PDFs plus ~100 rendered pages. Compliant with no permission needed, and enough to build and benchmark the whole system end to end. The `docs` corpus is added later once option 1 lands.
+3. **Crawl it anyway.** Not recommended and not implemented without an explicit written instruction. It is an unauthorised crawl of institutional infrastructure behind Cloudflare, and the project would have to defend it in evaluation.
+
+- **Interim action taken:** No further requests have been made to `docs.vnrvjiet.ac.in` since the `robots.txt` was read. `follow_subdomains` remains `false`.
+- **Recommendation:** Pursue option 1 in parallel while building on option 2, so the pipeline is not blocked while permission is sought. The architecture does not change between them — only the registry's host allowlist.
+- **Revisit trigger:** Written permission is obtained, or the subdomain's `robots.txt` changes.
