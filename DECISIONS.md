@@ -143,3 +143,19 @@ Automatic means no human step in steady state. Concretely:
 - **Interim action taken:** No further requests have been made to `docs.vnrvjiet.ac.in` since the `robots.txt` was read. `follow_subdomains` remains `false`.
 - **Recommendation:** Pursue option 1 in parallel while building on option 2, so the pipeline is not blocked while permission is sought. The architecture does not change between them — only the registry's host allowlist.
 - **Revisit trigger:** Written permission is obtained, or the subdomain's `robots.txt` changes.
+
+---
+
+## FT-001 — LoRA vs QLoRA for the VJLM fine-tune
+
+- **Status:** decided (method); **training not yet executed**
+- **Date:** 2026-09-16
+- **Requirements:** Train on a free Colab T4 (~15 GB VRAM). Base model must remain swappable. Output must quantize to GGUF for 16 GB CPU serving.
+- **Candidates:** full fine-tuning; LoRA; QLoRA.
+- **Selected:** **LoRA**, r=16, alpha=32, dropout=0.05, on all attention and MLP projections (`q,k,v,o,gate,up,down`), base loaded in bf16.
+- **Why:** At the selected 1.5B scale the base is ~3 GB in bf16 and fits the T4 with room for optimizer state and activations. QLoRA's 4-bit base load solves a VRAM constraint that does not exist here, while adding quantization error during training and reducing step throughput.
+- **Rejected:**
+  - *QLoRA* — buys headroom we do not need at 1.5B. **Becomes the correct choice if the base model moves to 7B/8B**, which would not fit in bf16 on a free T4.
+  - *Full fine-tuning* — no measured evidence yet that it is needed, and it risks catastrophic forgetting on a 1.5B model trained on ~1.4k behavioural examples.
+- **Note:** Training precision is independent of serving precision. The output is still quantized to Q4_K_M for CPU inference — that is `QUANT-001`, a separate decision.
+- **Revisit trigger:** Base model changes to 7B+; or Phase 8 evaluation shows LoRA gains over base are not meaningful.
