@@ -243,6 +243,30 @@ def main():
         check("index file untouched after a failed stage",
               os.path.getmtime(os.path.join(d, "rag/index/bm25.pkl")) == before)
 
+        # ---- 7. a transient nav failure retries, then fails open ---------
+        print("\n[6] render retries a transient failure and keeps last-known-good")
+        try:
+            sys.path.insert(0, os.path.join(ROOT, "ingestion", "crawler"))
+            import render as R2
+            R2.NAV_TIMEOUT_MS, R2.RETRY_BACKOFF_S = 3000, 0.1
+            prev = {"source_id": "unreachable", "url": "http://127.0.0.1:9/x",
+                    "snapshot": "unreachable.html", "content_hash": "GOOD",
+                    "bytes": 5000, "status": "new", "document_version": 3}
+            out = R2.render_all([{"source_id": "unreachable",
+                                  "canonical_url": "http://127.0.0.1:9/x"}],
+                                {"unreachable": prev}, delay=0)
+            r = out["unreachable"]
+            check("unreachable page ends in error state", r["status"] == "error")
+            check("previous content hash preserved", r.get("content_hash") == "GOOD",
+                  str(r.get("content_hash")))
+            check("previous snapshot preserved", r.get("snapshot") == "unreachable.html")
+            check("document_version not bumped on failure", r.get("document_version") == 3,
+                  str(r.get("document_version")))
+        except ImportError:
+            print("      (playwright not installed - skipped)")
+        except Exception as e:
+            check("render retry/fail-open", False, str(e)[:160])
+
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

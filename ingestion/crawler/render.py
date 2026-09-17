@@ -48,6 +48,11 @@ STABLE_TIMEOUT_MS = 12000
 # implemented it.
 MAX_SHRINK_RATIO = 0.5
 
+# sync.retry_transient_failures in configs/ingestion.yaml. RETRIES counts the
+# first attempt, so 3 means the original plus two retries.
+RETRIES = 3
+RETRY_BACKOFF_S = 2.0
+
 
 def wait_for_stable_text(page):
     """Block until the page's text stops changing, or the timeout expires.
@@ -123,19 +128,37 @@ def render_all(rows, state, delay=1.0, headful=False):
         for i, row in enumerate(rows, 1):
             sid, url = row["source_id"], row["canonical_url"]
             prev = state.get(sid, {})
-            try:
-                page.goto(url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
-                settled = wait_for_stable_text(page)
-                html = page.content()
-                title, text = extract_text(html)
-                if not settled:
-                    print("  [%d/%d] WARN  %s still changing at timeout"
-                          % (i, len(rows), url), flush=True)
-            except Exception as e:
+            # configs/ingestion.yaml has specified retry_transient_failures: 3
+            # since Phase 3 and nothing implemented it. A navigation timeout is
+            # usually transient - in one 106-page run 6 pages timed out and all
+            # 6 succeeded on a later cycle - so retrying in-run turns a week of
+            # staleness into a few extra seconds.
+            html = title = text = None
+            err = None
+            for attempt in range(RETRIES):
+                try:
+                    page.goto(url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+                    settled = wait_for_stable_text(page)
+                    html = page.content()
+                    title, text = extract_text(html)
+                    if not settled:
+                        print("  [%d/%d] WARN  %s still changing at timeout"
+                              % (i, len(rows), url), flush=True)
+                    err = None
+                    break
+                except Exception as e:
+                    err = e
+                    if attempt + 1 < RETRIES:
+                        print("  [%d/%d] retry %d/%d %s (%s)"
+                              % (i, len(rows), attempt + 1, RETRIES - 1, url,
+                                 str(e).splitlines()[0][:50]), flush=True)
+                        time.sleep(RETRY_BACKOFF_S * (attempt + 1))
+            if err is not None:
                 # Fail open: keep whatever we already had for this page.
-                results[sid] = dict(prev, status="error", last_error=str(e)[:120],
+                results[sid] = dict(prev, status="error", last_error=str(err)[:120],
                                     last_seen=time.time())
-                print("  [%d/%d] ERROR %s (%s)" % (i, len(rows), url, str(e)[:60]), flush=True)
+                print("  [%d/%d] ERROR %s (%s)" % (i, len(rows), url,
+                                                   str(err).splitlines()[0][:60]), flush=True)
                 continue
 
             if len(text) < MIN_CHARS:

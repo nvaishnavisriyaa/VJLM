@@ -260,14 +260,31 @@ class Refresher:
             rs = read_json(REFRESH_STATE, {})
             now = time.time()
 
-            # 1. discovery - finds documents that did not exist before
-            if force or now - rs.get("last_discover", 0) >= DISCOVER_INTERVAL_H * 3600:
-                self._set("discovering", "looking for new documents")
+            # 1. Has the site shipped? One 4 KB request, and it drives both
+            #    discovery and the page recheck below.
+            sys.path.insert(0, os.path.join(ROOT, "ingestion", "crawler"))
+            from site_version import pages_may_have_changed
+            deployed, self._bundle, self._why = pages_may_have_changed()
+
+            # 2. Discovery finds documents that did not exist before, and this
+            #    is what actually governs freshness: a new circular gets a new
+            #    URL, so it arrives as a NEW source (always due) rather than
+            #    waiting out any recheck interval.
+            #
+            #    Every document URL is referenced from the JS bundle, so an
+            #    unchanged bundle means no new documents - discovery can be
+            #    skipped. That makes it effectively continuous instead of
+            #    daily, at the cost of one 4 KB request, while the 24h timer
+            #    stays as a backstop in case the signal is ever wrong.
+            stale = now - rs.get("last_discover", 0) >= DISCOVER_INTERVAL_H * 3600
+            if force or deployed or stale:
+                why = "deploy" if deployed else ("%dh since last" % DISCOVER_INTERVAL_H)
+                self._set("discovering", "looking for new documents (%s)" % why)
                 self._run("ingestion/crawler/discover.py")
                 rs["last_discover"] = now
                 write_json(REFRESH_STATE, rs)
 
-            # 2. fetch only what is past its own interval
+            # 3. fetch only what is past its own interval
             due = due_sources(now)
 
             # A new deploy is a better freshness signal for pages than any
@@ -276,10 +293,6 @@ class Refresher:
             # 7- or 30-day recheck. Cheap because it is one 4 KB request, and
             # the per-page text hashes still decide whether anything downstream
             # runs - a CSS-only deploy costs renders and no re-indexing.
-            sys.path.insert(0, os.path.join(ROOT, "ingestion", "crawler"))
-            from site_version import pages_may_have_changed
-            deployed, self._bundle, self._why = pages_may_have_changed()
-
             since = now - rs.get("last_deploy_recheck", 0)
             if deployed and since < DEPLOY_RECHECK_MIN_H * 3600 and not force:
                 # Deploy noted, but we rechecked recently. Deliberately do NOT
