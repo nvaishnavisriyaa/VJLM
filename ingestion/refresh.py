@@ -157,12 +157,31 @@ class Refresher:
 
     # -- stage runner ----------------------------------------------------
     def _run(self, script, args=()):
+        """Stream the stage's output instead of swallowing it.
+
+        This runs unattended for tens of minutes; capturing output means a
+        stalled crawl looks identical to a working one. Lines are echoed with
+        the stage name and the tail is kept for the error message.
+        """
         cmd = [self.python, os.path.join(ROOT, script)] + list(args)
-        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        tag = os.path.basename(script)
+        tail, lines = [], []
+        p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True,
+                             encoding="utf-8", errors="replace", bufsize=1)
+        for line in p.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            lines.append(line)
+            tail.append(line)
+            del tail[:-6]
+            print("    [%s] %s" % (tag, line), flush=True)
+            self.state["detail"] = line[:120]
+        p.wait()
         if p.returncode != 0:
-            tail = (p.stderr or p.stdout or "").strip().splitlines()[-3:]
-            raise RuntimeError("%s failed: %s" % (script, " | ".join(tail)))
-        return p.stdout
+            raise RuntimeError("%s failed: %s" % (script, " | ".join(tail[-3:])))
+        return "\n".join(lines)
 
     # -- dense vectors ---------------------------------------------------
     def _embed_async(self):

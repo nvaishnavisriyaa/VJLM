@@ -64,14 +64,13 @@ def fetch_one(row, state):
     }
 
 def main():
+    global DELAY, WORKERS
     ap = argparse.ArgumentParser()
     ap.add_argument("type", nargs="?", help="only this document_type (pdf|html)")
     ap.add_argument("--only-ids", help="file with one source_id per line; fetch just these")
     ap.add_argument("--delay", type=float, default=DELAY, help="seconds between requests per worker")
     ap.add_argument("--workers", type=int, default=WORKERS)
     a = ap.parse_args()
-
-    global DELAY, WORKERS
     DELAY, WORKERS = a.delay, a.workers
 
     os.makedirs(SNAP, exist_ok=True); os.makedirs(os.path.dirname(STATE), exist_ok=True)
