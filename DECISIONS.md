@@ -120,7 +120,7 @@ Automatic means no human step in steady state. Concretely:
 ### Consequences accepted
 
 - Discovery quality now rests entirely on the registry plus sitemap plus scoped recursion. If the site has no sitemap or a stale one, that is a real coverage risk, to be measured in Phase 3 rather than assumed away.
-- JavaScript-rendered pages need a **local** headless browser (a local browser is not an API). This is heavier and slower, so it stays a fallback for pages plain HTTP cannot extract.
+- JavaScript-rendered pages need a **local** headless browser (a local browser is not an API). ~~This is heavier and slower, so it stays a fallback for pages plain HTTP cannot extract.~~ **Superseded 2026-09-17 by INGEST-003:** Phase 1 recon proved plain HTTP extracts *nothing* from any page route, so the browser is the primary path for pages, not a fallback.
 - All extraction is deterministic parsing, which means parser failures are our problem to detect. Hence the anomaly guards in `configs/ingestion.yaml`.
 
 - **Revisit trigger:** The institution offers an official data feed, or measured sitemap/link coverage in Phase 3 proves inadequate for a required category.
@@ -145,6 +145,39 @@ Automatic means no human step in steady state. Concretely:
 - **Revisit trigger:** Written permission is obtained, or the subdomain's `robots.txt` changes.
 
 ---
+
+## INGEST-003 — How page routes are fetched, and how "changed" is decided
+
+- **Status:** decided
+- **Date:** 2026-09-17
+- **Requirements:** Capture the 106 page routes without a hosted service, detect real content changes, and stay cheap enough to run unattended on every app start.
+- **Sources checked:** the live site, 2026-09-17 — `https://www.vnrvjiet.ac.in/` shell, `/sitemap.xml`, and `/assets/index-C3N1iQ1M.js`.
+- **Experiment:** Fetched every page route over plain HTTP; rendered the same routes with local headless Chromium; probed the JS bundle for known page copy.
+- **Metrics:**
+  - Plain HTTP returns a byte-identical ~4 KB shell for **every** route → 0 chunks from 106 pages.
+  - Headless Chromium: **105 of 106 pages** yield content, 99 distinct, 414 KB, 462 chunks. ~4 s per page.
+  - All page copy is present in the single 12.7 MB bundle (7/7 probes found).
+  - Bundle-hash pre-check: **one 4 KB request** replaces 105 renders when nothing shipped.
+- **Selected:** **Local headless Chromium (Playwright) as the primary page fetch path**, gated by the bundle content hash, with per-page text hashes making the final call.
+- **Why:** The recon finding is decisive — plain HTTP cannot see page content at all, so "fallback" was the wrong shape. A local browser is not an external API, so INGEST-001 Tier 1/2 are untouched. The bundle filename is a Vite content hash that changes iff the app changed, giving a cheap, accurate "is it worth looking?" signal.
+- **Rejected:**
+  - *Parsing the JS bundle directly* — the content **is** all in there, and this would be far faster. Rejected because the bundle is minified: recovering which string belongs to which route means reverse-engineering compiled React, and it breaks on every rebuild. Revisit if the site ever ships a content API or unminified data.
+  - *Hashing rendered HTML* — a Vite rebuild changes every class name and chunk hash, so this would mark all 106 pages changed on every deploy and force pointless re-embedding. Hash the extracted text instead (`configs/ingestion.yaml` already required this).
+  - *Fixed post-load sleep* — a guess that is either wasteful or wrong. Replaced by polling `innerText.length` until stable.
+  - *Waiting on a named element per page* — accurate but needs a selector for each of 106 heterogeneous pages, which is per-page config to maintain.
+- **Revisit trigger:** The site stops being client-rendered, ships a content API, or the bundle stops being content-hashed.
+
+## RAG-CACHE-001 — What keys a cached embedding
+
+- **Status:** decided
+- **Date:** 2026-09-17
+- **Requirements:** A refresh must re-embed only what changed, and must never serve a vector that does not correspond to its chunk's current text.
+- **Experiment:** Replaced a chunk's text in place, leaving its position unchanged, and inspected what the cache returned.
+- **Metrics:** With the cache keyed on `chunk_id` — which is `sha1(source_id:page:chunk_index)`, purely positional — the edited chunk was a cache **hit**: 0 re-embeds, cosine **1.000** against the old text and **0.413** against the new. A query for the old topic still matched the chunk at 0.731 versus 0.414 for what it now said.
+- **Selected:** Key the cache on **`sha1` of the chunk text**.
+- **Why:** Positional ids make "unchanged position" indistinguishable from "unchanged content", so an in-place edit silently serves a stale vector with no error anywhere. Hashing the text makes reuse mean what it should. It also collapses identical text across the corpus onto one embedding — 13,051 chunks → 11,599 distinct, 11% fewer per build.
+- **Rejected:** *Keying on chunk_id* — the bug above. *Keying on (chunk_id, text hash)* — the chunk_id half adds nothing once the text is hashed, and would miss the cross-document dedup.
+- **Revisit trigger:** Chunking becomes content-defined, or the embedding model changes (the cache must then be discarded, since vectors are model-specific — it is not currently namespaced by model).
 
 ## FT-001 — LoRA vs QLoRA for the VJLM fine-tune
 

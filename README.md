@@ -74,4 +74,21 @@ Three gates that are easy to violate:
 
 ## Status
 
-Phase 0 — foundation in place. Next: Phase 1 scope and public source catalog.
+Last updated 2026-09-17. Full detail in [`HANDOFF.md`](HANDOFF.md).
+
+| Phase | State |
+|---|---|
+| 0–4 foundation → preprocessing | **Done.** 776/777 sources, 13,051 chunks (12,589 PDF + 462 page-derived) |
+| 3 dynamic ingestion | **Done and automatic.** The pipeline runs when the app starts; no scheduler entry, no human step |
+| 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. This is the blocking item |
+| 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
+| 7 base SLM selection | **Not started.** `configs/models.yaml` is still deliberately null |
+| 8 fine-tuning | **Not run.** Dataset and `training/train_local.py` are ready |
+| 9 quantization | Blocked on Phase 8 |
+| 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
+| 14–15 final eval, maintenance | Not started |
+
+**The next thing that matters is Phase 5.** Retrieval, the base model and
+quantization all claim to be decided "by measurement", and the only benchmark
+that currently exists is auto-derived from the passages themselves — which
+flatters BM25 and cannot judge answer quality at all.

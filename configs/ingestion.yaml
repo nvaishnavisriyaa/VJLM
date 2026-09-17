@@ -44,7 +44,14 @@ discovery:
 
 fetch:
   http_first: true
-  headless_fallback: true     # only for pages plain HTTP cannot extract
+  # PDFs come over plain HTTP. Page routes CANNOT - the site is a client-
+  # rendered SPA and plain HTTP returns an identical ~4 KB shell for every one
+  # of them (docs/phase1_site_recon.md finding 1). So the local headless
+  # browser is the primary path for pages, not a fallback. See INGEST-003.
+  headless_for_pages: true
+  # Skip rendering entirely when the site's bundle content-hash is unchanged:
+  # nothing can have changed, so 105 renders become one 4 KB request.
+  bundle_version_gate: true
   keep_raw_snapshot: true     # so an improved parser can reprocess without refetching
 
 change_detection:
@@ -66,7 +73,11 @@ schedule:
   # driven by that source's update_frequency in the registry — not one global
   # cadence for everything.
   enabled: true
-  driver: "windows_task_scheduler"
+  # Driven by the app, not by the OS: ingestion/refresh.py starts a background
+  # worker when app/server.py boots, so opening VJLM is what keeps the
+  # knowledge base current. No Task Scheduler entry to install or forget.
+  # Setting enabled: false stops the worker starting.
+  driver: "app_background_worker"
   intervals_by_update_frequency:
     daily: "PT6H"
     weekly: "P1D"

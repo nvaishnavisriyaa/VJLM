@@ -2,6 +2,25 @@
 
 **Read this first.** Written 2026-09-17, moving off a CPU-only laptop (i7-12700H, 15.7 GB RAM, Intel Iris Xe — no CUDA) onto a machine with a GPU.
 
+> **Update, later the same day — the move has happened.** This document was
+> written *before* the transfer and several of its instructions are now
+> obsolete. The new machine is an **Intel Core Ultra 7 265 (20 cores), 31.5 GB
+> RAM, NVIDIA RTX 2000 Ada, 16 GB VRAM**.
+>
+> Three things this changes:
+>
+> 1. **§4's "use fp16 instead of bf16" does not apply here.** That is a T4
+>    workaround — Turing has no native bf16 and emulates it. Ada is SM 8.9 with
+>    native bf16, so `bf16=True` in the notebooks is *correct* on this card and
+>    should stay. `training/train_local.py` detects this rather than assuming.
+> 2. **Colab is no longer needed for training.** `FOUND-003` chose it because
+>    no local CUDA GPU existed; one does now.
+> 3. **`docs/hardware_profile.md` describes the old laptop** and its RAM
+>    budget (6–8 GB) no longer binds. Re-profile before using it for Phase 9.
+>
+> The status table in §2 has been updated in place. Sections 3–7 are left as
+> written, since they record findings that are still true.
+
 > The **master plan** this project implements is [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) (original: [`docs/VJLM_End_to_End_Implementation_Decision_Plan.docx`](docs/VJLM_End_to_End_Implementation_Decision_Plan.docx)). It defines the 15 phases, the gates between them, and the decision-log discipline. The architecture and data-source figures are in [`docs/figures/`](docs/figures/). Read it before changing approach — this handoff only reports progress *against* it.
 
 ---
@@ -26,21 +45,41 @@ The project's central claim is **evidence-based engineering**: no component is c
 
 | Layer (per the architecture diagram) | Status | Evidence |
 |---|---|---|
-| **1. Data — discover / fetch / change-detect** | ✅ Working | 777 sources found, 652 PDFs (965 MB), re-run detected 1 changed file by content hash |
-| **1. Data — extract / chunk** | ✅ Working | 12,650 chunks from 628 docs, 0 parse failures, 24 scanned PDFs logged not dropped |
-| **1. Data — metadata / PII / dedup** | ✅ Working | department on 6,760 chunks (20 depts), academic_year on 7,243, 349 PII chunks redacted, 1,609 duplicates (12.7%) filtered |
-| **2b. Knowledge base — BM25** | ✅ Working | Recall@5 **94.4%**, MRR 0.818, 21.7 ms median |
-| **2b. Knowledge base — dense/hybrid** | ❌ **Not built** | ONNX embedding ran at 3 chunks/sec → 68 min; died 4× on session restarts |
-| **2a. Fine-tuning dataset** | ✅ Working | 1,544–1,586 behavioural examples, generated locally *and* self-contained in Colab |
-| **2a. Fine-tune** | ⚠️ **Started, never finished** | Reached the training loop on a T4; ETA was 2h19m — see §4, this is a fixable bug |
+| **1. Data — discover / fetch / change-detect** | ✅ Working | 776 of 777 sources fetched. The one failure is the site's own broken link (`/departments/vlsi` renders "Department not found") and the anomaly guard refused to ingest it |
+| **1. Data — website pages** | ✅ **Now working** | The site is a client-rendered SPA, so plain HTTP returned an empty 4 KB shell for all 106 routes and the corpus used to be 100% PDF. `ingestion/crawler/render.py` renders them with local headless Chromium: 105 pages, 99 distinct, 462 chunks |
+| **1. Data — extract / chunk** | ✅ Working | 13,051 chunks (12,589 PDF + 462 page-derived), 0 parse failures. Extraction is now incremental — one changed document re-reads one document |
+| **1. Data — metadata / PII / dedup** | ✅ Working | department on 6,760+ chunks, academic_year on 7,476, PII flagged, 1,660 exact duplicates filtered at retrieval |
+| **2b. Knowledge base — BM25** | ✅ Working | Rebuilds in **0.8 s**. Recall@5 0.911, MRR 0.803, p50 4.0 ms on the auto-derived benchmark |
+| **2b. Knowledge base — dense/hybrid** | ✅ **Now built** | 13,051 × 384. **22 chunks/sec** with `threads=cpu_count` (the 3/sec figure was the unconfigured default), ~10 min for a full build, resumable. Vectors cached by text hash, so a refresh embeds only what changed |
+| **2a. Fine-tuning dataset** | ✅ Working | 1,199 / 147 / 147. Split is by document group *before* augmentation — the previous split shared 32% of its test answers with train, making any fine-tune result unmeasurable |
+| **2a. Fine-tune** | ⚠️ **Still not run** | `training/train_local.py` trains on the local GPU and detects precision rather than assuming it. See the update at the top — §4's fp16 advice is T4-specific |
 | **2a. Quantization (ours)** | ❌ Blocked on the fine-tune | Script is written and wired |
 | **3. Inference — RBAC + prompt + citations** | ✅ Working | Filters before ranking, role boosts, citations rendered |
-| **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real |
+| **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real, but in Phase 1 every role sees the same public data, so it filters nothing in practice |
 | **4. Local infra — CPU serving** | ✅ Working | 19.4 tok/s, full answer in **8.75 s** |
-| **Scheduler (self-maintaining)** | ❌ Not wired | Interval policy written in `configs/ingestion.yaml`, no Task Scheduler entry yet |
+| **Scheduler (self-maintaining)** | ✅ **Now wired** | Not Task Scheduler — `ingestion/refresh.py` runs when the app starts. Per-source intervals; a cycle with nothing due costs **0.08 s** |
 | **Benchmark-driven model comparison** | ❌ Not run | Harness exists; see [`experiments/PLAN.md`](experiments/PLAN.md) |
+| **Phase 5 human benchmark** | ❌ **Not started — now the blocker** | `evaluation/questions.jsonl` and `gold_sources.jsonl` are empty files |
 
-**In one line: the data pipeline, RAG, RBAC and local serving all work. Fine-tuning and our own quantization do not yet exist.**
+**In one line: the data pipeline is complete and automatic, RAG now has both
+retrievers, and the remaining gaps are fine-tuning, quantization, and — above
+all — a benchmark honest enough to judge them.**
+
+### Why the retrieval numbers do not settle RAG-001
+
+The three-way comparison finally ran (`evaluation/eval_retrieval.py --k 5`, n=90):
+
+| mode | recall@5 | MRR | p50 |
+|---|---|---|---|
+| bm25 | **0.911** | **0.803** | 4.0 ms |
+| dense | 0.667 | 0.509 | 4.0 ms |
+| hybrid | 0.789 | 0.722 | 8.8 ms |
+
+BM25 wins — but read §3.2 before concluding anything. These questions are
+auto-derived from the passages, so they share vocabulary with their source and
+are exactly the case BM25 is best at. Dense retrieval is being scored on a test
+built around its weakness. This is evidence that **Phase 5 is the blocking
+piece**, not evidence that dense is worse.
 
 ---
 

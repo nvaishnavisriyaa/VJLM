@@ -35,6 +35,14 @@ DEFAULT_INTERVALS = {"daily": "PT6H", "weekly": "P1D", "monthly": "P7D",
 DISCOVER_INTERVAL_H = 24        # how often to look for NEW documents
 CYCLE_SLEEP_S = 900             # 15 min between checks while the app is up
 
+# A deploy makes every page worth re-checking, but the bundle hash changes on
+# ANY code change - a CSS tweak or a dependency bump, not just page copy.
+# Observed 2026-09-17: the site shipped twice within 15 minutes and all 106
+# pages came back byte-identical both times, i.e. ~22 minutes of browser work
+# for nothing. This floor stops an active deploy day turning the gate from an
+# optimisation into a cost. Per-source intervals still apply underneath.
+DEPLOY_RECHECK_MIN_H = 6
+
 ISO = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$")
 
 
@@ -86,6 +94,17 @@ def write_json(path, obj):
     os.replace(tmp, path)
 
 
+def all_source_ids():
+    """Every active source in the catalog."""
+    import csv
+    try:
+        with open(CATALOG, encoding="utf-8") as f:
+            return [r["source_id"] for r in csv.DictReader(f)
+                    if r.get("active", "true").lower() == "true"]
+    except FileNotFoundError:
+        return []
+
+
 def split_by_type(ids):
     """(pdf_ids, html_ids) - the two fetch paths are different tools."""
     import csv
@@ -135,6 +154,8 @@ class Refresher:
         self._lock = threading.Lock()
         self._thread = None
         self._embedding = None
+        self._bundle = None
+        self._why = ""
         self._stop = threading.Event()
         self.state = {"phase": "idle", "detail": "", "started": None,
                       "finished": None, "changed": 0, "error": None,
@@ -248,6 +269,36 @@ class Refresher:
 
             # 2. fetch only what is past its own interval
             due = due_sources(now)
+
+            # A new deploy is a better freshness signal for pages than any
+            # fixed interval: the bundle hash changes iff the app changed, so
+            # a site update should be picked up now rather than waiting out a
+            # 7- or 30-day recheck. Cheap because it is one 4 KB request, and
+            # the per-page text hashes still decide whether anything downstream
+            # runs - a CSS-only deploy costs renders and no re-indexing.
+            sys.path.insert(0, os.path.join(ROOT, "ingestion", "crawler"))
+            from site_version import pages_may_have_changed
+            deployed, self._bundle, self._why = pages_may_have_changed()
+
+            since = now - rs.get("last_deploy_recheck", 0)
+            if deployed and since < DEPLOY_RECHECK_MIN_H * 3600 and not force:
+                # Deploy noted, but we rechecked recently. Deliberately do NOT
+                # record the new bundle hash - the next eligible cycle must
+                # still see it as changed, or this deploy is lost entirely.
+                self._set("fetching", "deploy seen (%s) but rechecked %.1fh ago; "
+                                      "pages stay on their own intervals"
+                          % (self._why, since / 3600))
+                deployed, self._bundle = False, None
+            elif deployed:
+                _, all_pages = split_by_type(all_source_ids())
+                added = [p for p in all_pages if p not in due]
+                if added:
+                    self._set("fetching", "site deploy detected (%s); %d page%s to recheck"
+                              % (self._why, len(added), "" if len(added) == 1 else "s"))
+                    due = due + added
+                rs["last_deploy_recheck"] = now
+                write_json(REFRESH_STATE, rs)
+
             if not due and not force:
                 self._set("idle", "nothing due")
                 rs["last_cycle"] = now
@@ -268,22 +319,20 @@ class Refresher:
                 self._run("ingestion/crawler/fetch.py",
                           ["--only-ids", DUE_FILE, "--delay", str(crawl_delay())])
             if pages:
-                # One 4 KB request decides whether 106 browser renders are
-                # worth doing at all: the Vite bundle hash changes iff the app
-                # (including its page copy) changed.
-                sys.path.insert(0, os.path.join(ROOT, "ingestion", "crawler"))
-                from site_version import pages_may_have_changed, write as save_bundle
-                may, bundle, why = pages_may_have_changed()
-                if not may and not force:
-                    self._set("fetching", "pages skipped - %s" % why)
+                # The bundle check already ran above. If nothing shipped, the
+                # pages that came due on a timer cannot have changed, so skip
+                # the browser entirely.
+                from site_version import write as save_bundle
+                if not deployed and not force:
+                    self._set("fetching", "pages skipped - %s" % self._why)
                     pages = []
                 else:
                     self._set("rendering", "%d page%s in headless browser (%s)"
-                              % (len(pages), "" if len(pages) == 1 else "s", why))
+                              % (len(pages), "" if len(pages) == 1 else "s", self._why))
                     self._run("ingestion/crawler/render.py",
                               ["--only-ids", DUE_FILE, "--delay", str(crawl_delay())])
-                    if bundle:
-                        save_bundle(bundle)
+                    if self._bundle:
+                        save_bundle(self._bundle)
             after = read_json(STATE, {})
 
             changed = [s for s in due
