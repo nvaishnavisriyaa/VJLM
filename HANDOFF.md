@@ -2,6 +2,8 @@
 
 **Read this first.** Written 2026-09-17, moving off a CPU-only laptop (i7-12700H, 15.7 GB RAM, Intel Iris Xe — no CUDA) onto a machine with a GPU.
 
+> The **master plan** this project implements is [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md) (original: [`docs/VJLM_End_to_End_Implementation_Decision_Plan.docx`](docs/VJLM_End_to_End_Implementation_Decision_Plan.docx)). It defines the 15 phases, the gates between them, and the decision-log discipline. The architecture and data-source figures are in [`docs/figures/`](docs/figures/). Read it before changing approach — this handoff only reports progress *against* it.
+
 ---
 
 ## 1. What VJLM is

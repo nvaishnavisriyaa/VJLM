@@ -13,6 +13,19 @@ A local, role-aware, domain-specific AI assistant for VNRVJIET.
 | Security | Authentication/RBAC enforces access **before** retrieval. The model is never the security boundary. |
 | Selection rule | No component is chosen because it is popular. Every choice is backed by a VJLM-specific comparison recorded in `DECISIONS.md`. |
 
+## The plan
+
+The full 15-phase implementation and decision plan is [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md), with the architecture and data-source figures in [`docs/figures/`](docs/figures/). Current progress against it is in [`HANDOFF.md`](HANDOFF.md).
+
+Derived from the plan:
+
+| Document | Covers |
+|---|---|
+| [`DECISIONS.md`](DECISIONS.md) | Every component choice, its evidence, rejected options, revisit trigger |
+| [`data_catalog/classification.md`](data_catalog/classification.md) | Phase 2 — fine-tune vs RAG across all 14 public categories |
+| [`experiments/PLAN.md`](experiments/PLAN.md) | Phases 6–9 — which models, FT methods, quantizations and retrievers get compared |
+| [`docs/phase1_site_recon.md`](docs/phase1_site_recon.md) | Phase 1 — 9 measured findings about the VNRVJIET site |
+
 ## The three-way separation
 
 - **Fine-tuning** — what VJLM inherently knows and how it behaves (stable VNR identity, terminology, role-specific answer style).
