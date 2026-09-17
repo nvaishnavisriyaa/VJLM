@@ -30,8 +30,41 @@ UA = "VJLM-research-crawler (VNRVJIET academic project)"
 # Chrome that a real visitor would not distinguish from a normal tab, but
 # identified honestly in the UA so the site owner can see who we are.
 NAV_TIMEOUT_MS = 45000
-SETTLE_MS = 1200          # let late XHR content paint after network idle
 MIN_CHARS = 200           # below this, treat the render as a failure
+
+# Hydration: "networkidle" fires when the network quiets, which on a React app
+# can be BEFORE the components have painted their data. A fixed sleep is a
+# guess that is either wasteful or wrong. Waiting for a named element would be
+# accurate but needs a selector per page, and there are 106 heterogeneous ones.
+# Instead poll the rendered text length until it stops growing - generic, and
+# it exits as soon as the page is actually done.
+STABLE_POLL_MS = 250
+STABLE_REQUIRED = 3       # consecutive equal samples before we call it settled
+STABLE_TIMEOUT_MS = 12000
+
+# A partial hydration is more dangerous than an empty one: it clears MIN_CHARS
+# and silently REPLACES good content with less of it. configs/ingestion.yaml
+# already specifies max_content_shrink_ratio for exactly this and nothing ever
+# implemented it.
+MAX_SHRINK_RATIO = 0.5
+
+
+def wait_for_stable_text(page):
+    """Block until the page's text stops changing, or the timeout expires.
+    Returns True if it settled, False if it was still moving."""
+    last, stable, waited = -1, 0, 0
+    while waited < STABLE_TIMEOUT_MS:
+        n = page.evaluate("document.body ? document.body.innerText.length : 0")
+        if n == last and n > 0:
+            stable += 1
+            if stable >= STABLE_REQUIRED:
+                return True
+        else:
+            stable = 0
+        last = n
+        page.wait_for_timeout(STABLE_POLL_MS)
+        waited += STABLE_POLL_MS
+    return False
 
 
 def extract_text(html):
@@ -92,9 +125,12 @@ def render_all(rows, state, delay=1.0, headful=False):
             prev = state.get(sid, {})
             try:
                 page.goto(url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
-                page.wait_for_timeout(SETTLE_MS)
+                settled = wait_for_stable_text(page)
                 html = page.content()
                 title, text = extract_text(html)
+                if not settled:
+                    print("  [%d/%d] WARN  %s still changing at timeout"
+                          % (i, len(rows), url), flush=True)
             except Exception as e:
                 # Fail open: keep whatever we already had for this page.
                 results[sid] = dict(prev, status="error", last_error=str(e)[:120],
@@ -106,6 +142,18 @@ def render_all(rows, state, delay=1.0, headful=False):
                 results[sid] = dict(prev, status="error", last_seen=time.time(),
                                     last_error="rendered under %d chars" % MIN_CHARS)
                 print("  [%d/%d] EMPTY %s (%d chars)" % (i, len(rows), url, len(text)), flush=True)
+                continue
+
+            # Anomaly guard: a page that suddenly renders far less than last
+            # time is a partial hydration, not an edit. Keep the last known
+            # good snapshot rather than overwriting knowledge with a fragment.
+            was = prev.get("bytes", 0)
+            if was and len(text.encode("utf-8")) < was * MAX_SHRINK_RATIO:
+                results[sid] = dict(prev, status="error", last_seen=time.time(),
+                                    last_error="shrank %d -> %d bytes; kept previous"
+                                               % (was, len(text.encode("utf-8"))))
+                print("  [%d/%d] SHRANK %s (%d -> %d bytes, rejected)"
+                      % (i, len(rows), url, was, len(text.encode("utf-8"))), flush=True)
                 continue
 
             h = hashlib.sha256(text.encode("utf-8")).hexdigest()

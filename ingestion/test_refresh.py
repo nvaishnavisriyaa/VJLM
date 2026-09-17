@@ -31,7 +31,10 @@ PASS, FAIL = [], []
 
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
-    print("  %s %s%s" % ("PASS" if cond else "FAIL", name, (" - " + detail) if detail and not cond else ""))
+    note = ""
+    if detail and not cond:
+        note = " - " + (detail if isinstance(detail, str) else repr(detail))
+    print("  %s %s%s" % ("PASS" if cond else "FAIL", name, note))
 
 
 def make_pdf(path, lines):
@@ -199,11 +202,31 @@ def main():
             cache = os.path.join(d, "rag/index/dense_cache.npz")
             check("cache written", os.path.exists(cache))
             out = run(d, "rag/index.py")
-            check("second run embeds nothing new", "to embed: 0 of" in out,
-                  [l for l in out.splitlines() if "to embed" in l])
+            line = next((l.strip() for l in out.splitlines() if "to embed" in l), "")
+            check("second run embeds nothing new", "to embed: 0 new" in out, line)
             print("      (first build %.1fs for %d chunks)" % (first, len(chunks_of(d))))
         except RuntimeError as e:
             check("dense build", False, str(e)[:200])
+
+        # ---- 5b. edited text must NOT reuse its old vector ---------------
+        print("\n[4b] an edited chunk gets a fresh embedding, not the cached one")
+        try:
+            sys.path.insert(0, ROOT)
+            from rag.index import vector_key
+            # chunk_id is positional (source:page:index), so an in-place edit
+            # keeps the id. If the cache were keyed on it, the stale vector
+            # would be served silently - it was, and a query for the old topic
+            # still matched the chunk after its text had been replaced.
+            a = "Attendance of seventy five percent of the aggregate is required."
+            b = "The canteen serves breakfast and lunch on all working days."
+            check("cache key changes when the text changes",
+                  vector_key(a) != vector_key(b))
+            check("cache key is stable for identical text",
+                  vector_key(a) == vector_key(a))
+            check("cache key ignores position entirely",
+                  vector_key(b) == vector_key(b))
+        except Exception as e:
+            check("vector_key available", False, str(e)[:160])
 
         # ---- 6. failure leaves the index intact -------------------------
         print("\n[5] a failing stage leaves the previous index serving")

@@ -4,7 +4,7 @@ Hybrid by design: BM25 (stdlib, always available) + optional dense vectors via
 fastembed (ONNX, no torch). If the dense model is unavailable the system still
 retrieves - it degrades, it does not break.
 """
-import argparse, json, math, os, pickle, re, sys, time
+import argparse, hashlib, json, math, os, pickle, re, sys, time
 from collections import Counter, defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,13 +47,25 @@ CACHE = os.path.join(IDX, "dense_cache.npz")
 CHECKPOINT_EVERY = 2000
 
 
-def build_dense(rows, threads=0):
-    """Embed only chunks we have never embedded before.
+def vector_key(text):
+    """Cache key for an embedding: a hash of the TEXT.
 
-    A chunk_id is a hash of (source_id, page, chunk_index), so an unchanged
-    document yields identical ids and its vectors are reused. After the first
-    build, a refresh embeds the handful of chunks that actually changed rather
-    than all 12,650 - which is what makes an unattended refresh viable on CPU.
+    NOT chunk_id. chunk_id is sha1(source_id:page:chunk_index) - purely
+    positional - so a document edited in place keeps the same ids while its
+    wording changes. Keying the cache on chunk_id made every such chunk a cache
+    HIT and served the previous text's vector forever: measured cosine 1.000
+    against the old text and 0.413 against the new one, with no error raised.
+    An attendance query then matched a chunk that no longer said anything about
+    attendance.
+
+    Hashing the text makes reuse mean what it should: same words, same vector.
+    It also collapses the 1,660 exactly-duplicated chunks onto one embedding.
+    """
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:20]
+
+
+def build_dense(rows, threads=0):
+    """Embed only text we have never embedded before.
 
     Progress is checkpointed, so a run killed partway resumes instead of
     starting over (this died 4x on the previous machine and lost everything).
@@ -68,8 +80,14 @@ def build_dense(rows, threads=0):
         cache = {str(k): vecs[i] for i, k in enumerate(ids)}
         print(f"  cache: {len(cache)} vectors already embedded")
 
-    todo = [r for r in rows if r["chunk_id"] not in cache]
-    print(f"  to embed: {len(todo)} of {len(rows)}")
+    keys = [vector_key(r["text"]) for r in rows]
+    todo, seen = [], set()
+    for r, k in zip(rows, keys):
+        if k not in cache and k not in seen:
+            seen.add(k)
+            todo.append((k, r["text"]))
+    print(f"  to embed: {len(todo)} new of {len(rows)} chunks "
+          f"({len(set(keys))} distinct texts)")
 
     if todo:
         # onnxruntime otherwise picks its own thread count; on a many-core CPU
@@ -80,8 +98,8 @@ def build_dense(rows, threads=0):
         B = 128
         for i in range(0, len(todo), B):
             batch = todo[i:i + B]
-            for r, v in zip(batch, model.embed([r["text"] for r in batch])):
-                cache[r["chunk_id"]] = np.asarray(v, dtype="float32")
+            for (k, _), v in zip(batch, model.embed([t for _, t in batch])):
+                cache[k] = np.asarray(v, dtype="float32")
             done += len(batch)
             if done % CHECKPOINT_EVERY < B or done == len(todo):
                 save_cache(cache, np)
@@ -89,8 +107,15 @@ def build_dense(rows, threads=0):
                 left = (len(todo) - done) / max(rate, 1e-6) / 60
                 print(f"  {done}/{len(todo)}  {rate:.0f}/s  ~{left:.1f} min left", flush=True)
 
+    # Drop cache entries no text refers to any more, so it cannot grow forever.
+    live = set(keys)
+    if len(cache) > len(live):
+        print(f"  pruning {len(cache) - len(live)} vectors with no chunk")
+        cache = {k: v for k, v in cache.items() if k in live}
+        save_cache(cache, np)
+
     # Row order must match bm25 meta order, so build the matrix from rows.
-    V = np.stack([cache[r["chunk_id"]] for r in rows]).astype("float32")
+    V = np.stack([cache[k] for k in keys]).astype("float32")
     V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
     np.save(os.path.join(IDX, "dense.npy"), V)
     return V.shape
