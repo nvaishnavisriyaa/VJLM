@@ -10,6 +10,7 @@ sys.path.insert(0, ROOT)
 
 from flask import Flask, request, jsonify, Response
 from rag.retrieve import Retriever, build_prompt
+from ingestion.refresh import Refresher
 
 MODEL_DIR = os.path.join(ROOT, "quantization", "builds")
 app = Flask(__name__)
@@ -17,6 +18,7 @@ app = Flask(__name__)
 _ret = None
 _llm = None
 _lock = threading.Lock()
+_ret_lock = threading.Lock()
 
 
 def pick_model():
@@ -30,11 +32,37 @@ def pick_model():
     return None, None
 
 
+INDEX_FILE = os.path.join(ROOT, "rag", "index", "bm25.pkl")
+CHUNKS_FILE = os.path.join(ROOT, "preprocessing", "out", "rag_chunks.jsonl")
+
+
 def get_retriever():
+    """None until an index exists. A fresh clone has no rag/index/ (it is
+    gitignored and rebuildable), and the app must still start and say so
+    rather than crashing on import."""
     global _ret
-    if _ret is None:
-        _ret = Retriever()
+    if _ret is None and os.path.exists(INDEX_FILE):
+        with _ret_lock:
+            if _ret is None:
+                _ret = Retriever()
     return _ret
+
+
+def reload_retriever():
+    """Swap in a freshly built index. The new Retriever is constructed first
+    and only then published, so in-flight queries keep using the old one
+    instead of hitting a half-written index."""
+    global _ret
+    fresh = Retriever()
+    with _ret_lock:
+        _ret = fresh
+    print("[app] retriever reloaded: %d chunks, dense=%s"
+          % (len(fresh.meta), fresh.dense is not None), flush=True)
+
+
+# The pipeline is driven by the app: starting VJLM is what keeps the knowledge
+# base current. Phase 3's "automatic means no human step in steady state".
+refresher = Refresher(on_index_rebuilt=reload_retriever)
 
 
 LLAMA_URL = os.environ.get("VJLM_LLAMA_URL", "http://127.0.0.1:8080")
@@ -87,10 +115,18 @@ button:disabled{opacity:.5;cursor:default}
 .ex{color:var(--mut);font-size:13px;margin-top:14px}
 .ex b{color:var(--fg);font-weight:500;cursor:pointer;border-bottom:1px dotted var(--mut)}
 .sp{color:var(--mut);font-size:13px;margin-top:18px}
+.badge.live{cursor:pointer}
+.badge.work{color:#ffc86b;border-color:#5a4520}
+.badge.err{color:#ff9b9b;border-color:#5a2020}
+.dot{display:inline-block;width:6px;height:6px;border-radius:99px;background:currentColor;
+     margin-right:6px;vertical-align:middle}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.badge.work .dot{animation:pulse 1.1s ease-in-out infinite}
 </style></head><body>
 <header>
   <h1>VJLM <span>Vignana Jyothi Language Model</span></h1>
   <span class="badge" id="mode">loading…</span>
+  <span class="badge live" id="sync" title="Click to refresh the knowledge base now">…</span>
   <span class="badge">local CPU · no external API</span>
 </header>
 <main>
@@ -109,10 +145,38 @@ button:disabled{opacity:.5;cursor:default}
   <div id="out"></div>
 </main>
 <script>
-fetch('/api/status').then(r=>r.json()).then(s=>{
-  document.getElementById('mode').textContent =
-    s.model ? (s.kind+' · '+s.chunks.toLocaleString()+' chunks') : 'retrieval only';
-});
+// The refresh runs in the background from app start. Poll so the badge shows
+// what it is doing rather than the pipeline being invisible.
+const PHASE={idle:'knowledge base current',discovering:'finding new documents',
+  fetching:'checking sources',extracting:'reading documents',enriching:'tagging',
+  indexing:'rebuilding index',reloading:'applying update',
+  error:'refresh failed',disabled:'auto-refresh off'};
+function ago(t){if(!t)return'';const s=Date.now()/1000-t;
+  if(s<90)return'just now';if(s<5400)return Math.round(s/60)+'m ago';
+  if(s<172800)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';}
+async function poll(){
+  try{
+    const s=await (await fetch('/api/status')).json();
+    document.getElementById('mode').textContent =
+      s.model ? (s.kind+' · '+s.chunks.toLocaleString()+' chunks') : 'retrieval only';
+    const r=s.refresh||{}, b=document.getElementById('sync');
+    const busy=r.running&&r.phase!=='idle', err=r.phase==='error';
+    b.className='badge live'+(busy?' work':'')+(err?' err':'');
+    let txt=PHASE[r.phase]||r.phase||'';
+    if(busy&&r.detail)txt=r.detail;
+    else if(r.phase==='idle')txt=(r.due_now?r.due_now+' source(s) due':'up to date')
+      +(r.last_cycle?' · '+ago(r.last_cycle):'');
+    b.innerHTML='<span class="dot"></span>'+txt;
+    b.title=err?(r.error||'refresh failed'):'Click to refresh the knowledge base now';
+    // poll faster while work is happening so the UI tracks it
+    setTimeout(poll, busy?1500:15000);
+  }catch(e){setTimeout(poll,15000);}
+}
+poll();
+document.getElementById('sync').onclick=()=>{
+  fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({})}).then(()=>setTimeout(poll,300));
+};
 function set(e){document.getElementById('q').value=e.textContent;go()}
 async function go(){
   const q=document.getElementById('q').value.trim(); if(!q)return;
@@ -148,9 +212,21 @@ def index():
 def status():
     r = get_retriever()
     path, kind = pick_model()
-    return jsonify({"chunks": len(r.meta), "dense": r.dense is not None,
+    return jsonify({"chunks": len(r.meta) if r else 0,
+                    "dense": bool(r and r.dense is not None),
+                    "ready": r is not None,
                     "model": os.path.basename(path) if path else None,
-                    "kind": kind, "llama_server": llama_up()})
+                    "kind": kind, "llama_server": llama_up(),
+                    "refresh": refresher.status()})
+
+
+@app.route("/api/refresh", methods=["POST"])
+def refresh_now():
+    """Manual trigger. The background loop already runs on its own; this is for
+    'I just published a notice, pick it up now'."""
+    force = bool((request.get_json(silent=True) or {}).get("force"))
+    started = refresher.trigger(force=force)
+    return jsonify({"started": started, "refresh": refresher.status()})
 
 
 @app.route("/api/ask", methods=["POST"])
@@ -161,8 +237,16 @@ def ask():
     if role not in ("student", "faculty"):
         role = "student"
 
+    ret = get_retriever()
+    if ret is None:
+        st = refresher.status()
+        return jsonify({"answer": "The knowledge base is still being built (%s). "
+                                  "This runs automatically - try again shortly."
+                                  % (st.get("detail") or st.get("phase")),
+                        "citations": [], "t_retrieve": 0.0, "t_gen": 0.0})
+
     t0 = time.time()
-    chunks = get_retriever().search(q, role=role, topk=5)
+    chunks = ret.search(q, role=role, topk=5)
     t_ret = round(time.time() - t0, 2)
 
     if not chunks:
@@ -194,4 +278,13 @@ if __name__ == "__main__":
     p, k = pick_model()
     print("model:", os.path.basename(p) if p else "NONE", "|", k)
     print("llama-server:", "UP" if llama_up() else "DOWN (run runtime/start_llama.cmd)")
-    app.run(host="127.0.0.1", port=7860, threaded=True)
+
+    # Start the pipeline. The UI is served immediately from the existing index;
+    # the refresh runs behind it and hot-swaps the retriever when it finishes.
+    # Skip in the reloader's parent process so it does not run twice in debug.
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "false":
+        print("auto-refresh: on (%d source(s) due now)"
+              % refresher.status()["due_now"], flush=True)
+        refresher.start()
+
+    app.run(host="127.0.0.1", port=7860, threaded=True, use_reloader=False)

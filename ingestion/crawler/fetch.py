@@ -4,7 +4,7 @@ Re-runnable and incremental. Keeps a raw snapshot and a normalized-content
 hash per source. Unchanged sources are skipped. A failed fetch NEVER deletes
 last-known-good state. Stdlib only.
 """
-import concurrent.futures as cf, hashlib, json, os, re, sys, csv, time
+import argparse, concurrent.futures as cf, hashlib, json, os, re, sys, csv, time
 import urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,7 +12,12 @@ CATALOG = os.path.join(ROOT, "data_catalog", "catalog.csv")
 SNAP = os.path.join(ROOT, "ingestion", "snapshots")
 STATE = os.path.join(ROOT, "ingestion", "state", "sync_state.json")
 UA = "VJLM-research-crawler (VNRVJIET academic project)"
-WORKERS, DELAY = 6, 0.15
+# Politeness comes from configs/ingestion.yaml (request_delay_seconds). It is
+# passed in rather than read here so this stays stdlib-only. The effective rate
+# is WORKERS/DELAY requests per second - with the pipeline now running
+# unattended on every app start, that budget is against the institution's own
+# infrastructure, so the default is deliberately conservative.
+WORKERS, DELAY = 4, 1.0
 
 def load_state():
     if os.path.exists(STATE):
@@ -59,12 +64,26 @@ def fetch_one(row, state):
     }
 
 def main():
-    only = sys.argv[1] if len(sys.argv) > 1 else None
+    ap = argparse.ArgumentParser()
+    ap.add_argument("type", nargs="?", help="only this document_type (pdf|html)")
+    ap.add_argument("--only-ids", help="file with one source_id per line; fetch just these")
+    ap.add_argument("--delay", type=float, default=DELAY, help="seconds between requests per worker")
+    ap.add_argument("--workers", type=int, default=WORKERS)
+    a = ap.parse_args()
+
+    global DELAY, WORKERS
+    DELAY, WORKERS = a.delay, a.workers
+
     os.makedirs(SNAP, exist_ok=True); os.makedirs(os.path.dirname(STATE), exist_ok=True)
     with open(CATALOG, encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    if only:
-        rows = [r for r in rows if r["document_type"] == only]
+        all_rows = list(csv.DictReader(f))
+    rows = all_rows
+    if a.type:
+        rows = [r for r in rows if r["document_type"] == a.type]
+    if a.only_ids:
+        with open(a.only_ids, encoding="utf-8") as f:
+            wanted = {l.strip() for l in f if l.strip()}
+        rows = [r for r in rows if r["source_id"] in wanted]
     state = load_state()
     counts, done = {}, 0
     with cf.ThreadPoolExecutor(WORKERS) as ex:
@@ -76,8 +95,10 @@ def main():
             done += 1
             if done % 50 == 0:
                 print(f"  {done}/{len(rows)}  {counts}", flush=True)
-    # seen-this-run reconciliation: anything in state but not in catalog is retired
-    ids = {r["source_id"] for r in rows}
+    # Reconciliation is against the FULL catalog, never the filtered subset:
+    # a partial run (--only-ids, or a single document_type) must not retire
+    # every source it simply did not look at this time.
+    ids = {r["source_id"] for r in all_rows}
     for sid, st in state.items():
         if sid not in ids and st.get("status") != "retired":
             st["status"] = "retired"; counts["retired"] = counts.get("retired", 0) + 1

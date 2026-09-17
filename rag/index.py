@@ -4,7 +4,7 @@ Hybrid by design: BM25 (stdlib, always available) + optional dense vectors via
 fastembed (ONNX, no torch). If the dense model is unavailable the system still
 retrieves - it degrades, it does not break.
 """
-import json, math, os, pickle, re, sys
+import argparse, json, math, os, pickle, re, sys, time
 from collections import Counter, defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,32 +43,93 @@ class BM25:
                 scores[i] += idf * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * self.len[i] / self.avg))
         return sorted(scores.items(), key=lambda x: -x[1])[:topk]
 
+CACHE = os.path.join(IDX, "dense_cache.npz")
+CHECKPOINT_EVERY = 2000
+
+
+def build_dense(rows, threads=0):
+    """Embed only chunks we have never embedded before.
+
+    A chunk_id is a hash of (source_id, page, chunk_index), so an unchanged
+    document yields identical ids and its vectors are reused. After the first
+    build, a refresh embeds the handful of chunks that actually changed rather
+    than all 12,650 - which is what makes an unattended refresh viable on CPU.
+
+    Progress is checkpointed, so a run killed partway resumes instead of
+    starting over (this died 4x on the previous machine and lost everything).
+    """
+    import numpy as np
+    from fastembed import TextEmbedding
+
+    cache = {}
+    if os.path.exists(CACHE):
+        z = np.load(CACHE, allow_pickle=False)
+        ids, vecs = z["ids"], z["vecs"]
+        cache = {str(k): vecs[i] for i, k in enumerate(ids)}
+        print(f"  cache: {len(cache)} vectors already embedded")
+
+    todo = [r for r in rows if r["chunk_id"] not in cache]
+    print(f"  to embed: {len(todo)} of {len(rows)}")
+
+    if todo:
+        # onnxruntime otherwise picks its own thread count; on a many-core CPU
+        # the default leaves most of the machine idle.
+        kw = {"threads": threads} if threads else {}
+        model = TextEmbedding("BAAI/bge-small-en-v1.5", **kw)
+        done, t0 = 0, time.time()
+        B = 128
+        for i in range(0, len(todo), B):
+            batch = todo[i:i + B]
+            for r, v in zip(batch, model.embed([r["text"] for r in batch])):
+                cache[r["chunk_id"]] = np.asarray(v, dtype="float32")
+            done += len(batch)
+            if done % CHECKPOINT_EVERY < B or done == len(todo):
+                save_cache(cache, np)
+                rate = done / max(time.time() - t0, 1e-6)
+                left = (len(todo) - done) / max(rate, 1e-6) / 60
+                print(f"  {done}/{len(todo)}  {rate:.0f}/s  ~{left:.1f} min left", flush=True)
+
+    # Row order must match bm25 meta order, so build the matrix from rows.
+    V = np.stack([cache[r["chunk_id"]] for r in rows]).astype("float32")
+    V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
+    np.save(os.path.join(IDX, "dense.npy"), V)
+    return V.shape
+
+
+def save_cache(cache, np):
+    tmp = CACHE + ".tmp.npz"
+    np.savez(tmp, ids=np.array(list(cache), dtype=object).astype(str),
+             vecs=np.stack(list(cache.values())).astype("float32"))
+    os.replace(tmp, CACHE)
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--bm25-only", action="store_true",
+                    help="skip dense; BM25 alone is enough to serve")
+    ap.add_argument("--threads", type=int, default=os.cpu_count() or 0)
+    a = ap.parse_args()
+
     os.makedirs(IDX, exist_ok=True)
     rows = [json.loads(l) for l in open(CHUNKS, encoding="utf-8")]
     print(f"loaded {len(rows)} chunks")
     texts = [r["text"] for r in rows]
 
     print("building BM25 ...", flush=True)
+    t0 = time.time()
     bm = BM25(texts)
     with open(os.path.join(IDX, "bm25.pkl"), "wb") as f:
         pickle.dump({"bm25": bm, "meta": rows}, f)
-    print(f"  vocab={len(bm.idf)}  avg_len={bm.avg:.0f}")
+    print(f"  vocab={len(bm.idf)}  avg_len={bm.avg:.0f}  {time.time()-t0:.1f}s")
+
+    if a.bm25_only:
+        print("index ready (BM25 only) ->", IDX)
+        return
 
     try:
-        from fastembed import TextEmbedding
-        import numpy as np
         print("building dense vectors (bge-small, ONNX CPU) ...", flush=True)
-        model = TextEmbedding("BAAI/bge-small-en-v1.5")
-        vecs = []
-        B = 256
-        for i in range(0, len(texts), B):
-            vecs.extend(model.embed(texts[i:i + B]))
-            if (i // B) % 10 == 0: print(f"  {min(i+B,len(texts))}/{len(texts)}", flush=True)
-        V = np.array(list(vecs), dtype="float32")
-        V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
-        np.save(os.path.join(IDX, "dense.npy"), V)
-        print(f"  dense matrix {V.shape}")
+        shape = build_dense(rows, a.threads)
+        print(f"  dense matrix {shape}")
     except Exception as e:
         print(f"  dense skipped ({type(e).__name__}: {str(e)[:80]}) - BM25-only retrieval active")
 
