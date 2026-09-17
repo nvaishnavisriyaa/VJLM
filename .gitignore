@@ -46,3 +46,8 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# llama.cpp release binaries - platform-specific, re-downloaded by setup
+runtime/llama/**
+runtime/*.zip
+runtime/*.log
