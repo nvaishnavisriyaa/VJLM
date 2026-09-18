@@ -34,16 +34,23 @@ Derived from the plan:
 
 Stable facts may live in both fine-tuning and RAG. Frequently changing facts must never be embedded into model weights as the primary source of truth.
 
-## Split between local machine and Colab
+## Where each workload runs
+
+**Corrected 2026-09-18 — Colab has left the loop.** This section previously
+sent fine-tuning to Google Colab because the target machine had no CUDA GPU
+(`FOUND-003`). It now has one, so that condition no longer holds and every
+workload is local.
 
 | Workload | Where | Why |
 |---|---|---|
 | Ingestion, preprocessing, embedding, indexing | Local CPU | No GPU needed; data stays on-premise. |
-| Fine-tuning (LoRA / QLoRA) | Google Colab GPU | No CUDA GPU on the target machine. |
-| Quantization (GGUF conversion) | Colab or local | Whichever has the RAM headroom for the fp16 merge. |
+| Fine-tuning (LoRA / QLoRA) | **Local GPU** — RTX 2000 Ada, 16 GB | SM 8.9, native bf16. `training/train_local.py` detects precision rather than assuming it. |
+| Quantization (GGUF conversion) | Local | 31.5 GB RAM holds a 7B fp16 merge comfortably. |
 | Inference / serving | Local CPU only | Hard requirement. |
 
-Colab is a **build-time** tool. Nothing in the serving path may call it.
+Nothing in the serving path may call an external service. See
+[`docs/hardware_profile.md`](docs/hardware_profile.md) for the machine every
+number in `experiments/` was measured on.
 
 ## Layout
 
@@ -74,21 +81,46 @@ Three gates that are easy to violate:
 
 ## Status
 
-Last updated 2026-09-17. Full detail in [`HANDOFF.md`](HANDOFF.md).
+Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 
 | Phase | State |
 |---|---|
 | 0–4 foundation → preprocessing | **Done.** 776/777 sources, 13,051 chunks (12,589 PDF + 462 page-derived) |
 | 3 dynamic ingestion | **Done and automatic.** The pipeline runs when the app starts; no scheduler entry, no human step |
-| 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. This is the blocking item |
+| 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. Still the blocking item for *selection* |
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
-| 7 base SLM selection | **Not started.** `configs/models.yaml` is still deliberately null |
-| 8 fine-tuning | **Not run.** Dataset and `training/train_local.py` are ready |
+| 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
+| 8 fine-tuning | **Running.** Arm B (Mistral-7B QLoRA) trained and scored; arms A and C in progress |
 | 9 quantization | Blocked on Phase 8 |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
 
-**The next thing that matters is Phase 5.** Retrieval, the base model and
-quantization all claim to be decided "by measurement", and the only benchmark
+### Phase 8 — first tuned arm, measured
+
+Mistral-7B-Instruct-v0.3 + QLoRA r=16, against the untouched NF4 base on the
+same 147 held-out items, same seed, same decode settings. Raw rows in
+[`experiments/generation_results.jsonl`](experiments/generation_results.jsonl).
+
+| metric | base | tuned |
+|---|---|---|
+| grounded_f1 | 0.4401 `[0.3952, 0.4857]` | **0.7654** `[0.7192, 0.8073]` |
+| false_abstain | 14 / 87 | **0** |
+| abstain_precision | 0.8108 | **1.0000** |
+| abstain_recall | 1.0000 | 1.0000 (held) |
+| citation_rate | 0.3605 | **0.5102** |
+
+The 95% bootstrap CIs on grounded F1 do not overlap. The gain is in the
+direction that was actually hard: the base model already abstained on
+everything it should, but *also* refused 14 answerable questions. Training
+removed all 14 without breaking abstention.
+
+**Read this as a fine-tuning result, not a Phase 5 result.** These 147 items
+are the held-out split of the fine-tuning dataset, auto-derived from the
+corpus like the retrieval benchmark. They can compare training arms against
+each other on identical data, which is what Phase 8 needs. They cannot
+establish that VJLM answers real student questions well.
+
+**So the next thing that matters is still Phase 5.** Retrieval, the base model
+and quantization all claim to be decided "by measurement", and every benchmark
 that currently exists is auto-derived from the passages themselves — which
 flatters BM25 and cannot judge answer quality at all.

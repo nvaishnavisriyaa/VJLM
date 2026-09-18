@@ -15,8 +15,10 @@
 >    should stay. `training/train_local.py` detects this rather than assuming.
 > 2. **Colab is no longer needed for training.** `FOUND-003` chose it because
 >    no local CUDA GPU existed; one does now.
-> 3. **`docs/hardware_profile.md` describes the old laptop** and its RAM
->    budget (6–8 GB) no longer binds. Re-profile before using it for Phase 9.
+> 3. ~~**`docs/hardware_profile.md` describes the old laptop**~~ — **done
+>    2026-09-18.** It has been re-profiled against this machine, with the
+>    superseded record kept at the bottom for traceability. The 6–8 GB RAM
+>    budget does not bind here; disk (43.6 GB free) and VRAM *logits* do.
 >
 > The status table in §2 has been updated in place. Sections 3–7 are left as
 > written, since they record findings that are still true.
@@ -52,18 +54,54 @@ The project's central claim is **evidence-based engineering**: no component is c
 | **2b. Knowledge base — BM25** | ✅ Working | Rebuilds in **0.8 s**. Recall@5 0.911, MRR 0.803, p50 4.0 ms on the auto-derived benchmark |
 | **2b. Knowledge base — dense/hybrid** | ✅ **Now built** | 13,051 × 384. **22 chunks/sec** with `threads=cpu_count` (the 3/sec figure was the unconfigured default), ~10 min for a full build, resumable. Vectors cached by text hash, so a refresh embeds only what changed |
 | **2a. Fine-tuning dataset** | ✅ Working | 1,199 / 147 / 147. Split is by document group *before* augmentation — the previous split shared 32% of its test answers with train, making any fine-tune result unmeasurable |
-| **2a. Fine-tune** | ⚠️ **Still not run** | `training/train_local.py` trains on the local GPU and detects precision rather than assuming it. See the update at the top — §4's fp16 advice is T4-specific |
-| **2a. Quantization (ours)** | ❌ Blocked on the fine-tune | Script is written and wired |
+| **2a. Fine-tune** | ✅ **First arm trained and scored** | Mistral-7B QLoRA: grounded F1 **0.4401 → 0.7654** (CIs disjoint), false_abstain **14 → 0**, abstention held at 1.000. 3.8 h on the local GPU, 7.18 GB peak VRAM. Arms A and C running — see §2.1 |
+| **2a. Quantization (ours)** | ❌ Blocked on the fine-tune matrix completing | Script is written and wired |
 | **3. Inference — RBAC + prompt + citations** | ✅ Working | Filters before ranking, role boosts, citations rendered |
 | **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real, but in Phase 1 every role sees the same public data, so it filters nothing in practice |
 | **4. Local infra — CPU serving** | ✅ Working | 19.4 tok/s, full answer in **8.75 s** |
 | **Scheduler (self-maintaining)** | ✅ **Now wired** | Not Task Scheduler — `ingestion/refresh.py` runs when the app starts. Per-source intervals; a cycle with nothing due costs **0.08 s** |
-| **Benchmark-driven model comparison** | ❌ Not run | Harness exists; see [`experiments/PLAN.md`](experiments/PLAN.md) |
+| **Benchmark-driven model comparison** | 🔄 **Running** | 2 of 5 configurations scored. Driver is `training/run_matrix.py`; plan in [`experiments/PLAN.md`](experiments/PLAN.md) |
 | **Phase 5 human benchmark** | ❌ **Not started — now the blocker** | `evaluation/questions.jsonl` and `gold_sources.jsonl` are empty files |
 
-**In one line: the data pipeline is complete and automatic, RAG now has both
-retrievers, and the remaining gaps are fine-tuning, quantization, and — above
-all — a benchmark honest enough to judge them.**
+**In one line: the data pipeline is complete and automatic, RAG has both
+retrievers, fine-tuning is now measured rather than pending — and the
+remaining gaps are quantization and, above all, a benchmark honest enough to
+judge any of it.**
+
+### 2.1 Phase 8 — the fine-tuning matrix, in progress
+
+Five unique configurations, driven by `training/run_matrix.py`. The untouched
+Llama-3.2-3B base is scored **once** and reused as the baseline for both A and
+C rather than being run twice as if it were two experiments.
+
+| Arm | Model | Method | State |
+|---|---|---|---|
+| **B** | Mistral-7B-Instruct-v0.3 | QLoRA r=16 | ✅ trained + scored |
+| **A** | Llama-3.2-3B-Instruct | LoRA r=16 (bf16 base) | 🔄 training |
+| **AC** | Llama-3.2-3B-Instruct | *none* — shared baseline | ⏳ queued |
+| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | ⏳ queued |
+
+What each comparison is allowed to claim:
+
+- **A ↔ C** isolates the *method*. Everything else is locked: same examples,
+  order, seed, epochs, lr, scheduler, warmup, rank, alpha, dropout, target
+  modules, batch, sequence length and chat template. Only the base-weight
+  representation changes.
+- **C ↔ B** compares Llama-3.2-3B and Mistral-7B under the same QLoRA recipe.
+  It does **not** isolate parameter count alone, because model family,
+  architecture, tokenizer, vocabulary and pretraining also differ.
+
+Scoring is held at NF4 for **every** arm, including the bf16-trained arm A, so
+that inference quantization is not a hidden second variable. Reasoning in
+`FT-003`.
+
+**Known open item — which checkpoint is scored.** Arm B's validation loss
+bottoms at step 75 (exactly one epoch, 0.2349) and then rises monotonically
+through the whole second epoch to 0.2754, while train loss falls to 0.1443.
+The scored adapter is the **final** step-150 one, which is the over-fit side
+of that curve — and it still beat the base decisively. `checkpoint-75` is on
+disk, so "does one epoch beat two?" can be settled by one eval pass with no
+retraining. Not yet decided.
 
 ### Why the retrieval numbers do not settle RAG-001
 
