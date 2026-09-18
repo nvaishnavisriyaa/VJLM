@@ -90,35 +90,42 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. Still the blocking item for *selection* |
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
-| 8 fine-tuning | **Running.** Arm B (Mistral-7B QLoRA) trained and scored; arms A and C in progress |
+| 8 fine-tuning | **Running.** Arms B and A trained and scored, plus both baselines; arm C training |
 | 9 quantization | Blocked on Phase 8 |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
 
-### Phase 8 — first tuned arm, measured
+### Phase 8 — fine-tuning results so far
 
-Mistral-7B-Instruct-v0.3 + QLoRA r=16, against the untouched NF4 base on the
-same 147 held-out items, same seed, same decode settings. Raw rows in
+Four of five configurations scored on the same 147 held-out items, same seed,
+same decode settings. Raw rows in
 [`experiments/generation_results.jsonl`](experiments/generation_results.jsonl).
 
-| metric | base | tuned |
-|---|---|---|
-| grounded_f1 | 0.4401 `[0.3952, 0.4857]` | **0.7654** `[0.7192, 0.8073]` |
-| false_abstain | 14 / 87 | **0** |
-| abstain_precision | 0.8108 | **1.0000** |
-| abstain_recall | 1.0000 | 1.0000 (held) |
-| citation_rate | 0.3605 | **0.5102** |
+| | Mistral-7B base | **Mistral-7B QLoRA** | Llama-3.2-3B base | **Llama-3.2-3B LoRA** |
+|---|---|---|---|---|
+| grounded_f1 | 0.4401 | **0.7654** `[0.719, 0.807]` | 0.2369 | **0.7567** `[0.717, 0.796]` |
+| abstain_recall | 1.0000 | 1.0000 | 0.2833 | **1.0000** |
+| false_abstain | 14 / 87 | **0** | 12 / 87 | **0** |
+| citation_rate | 0.3605 | **0.5102** | 0.0204 | **0.5102** |
+| train minutes | — | 230.6 | — | **74.0** |
+| s / answer | 22.19 | 20.16 | 5.83 | **13.72** |
 
-The 95% bootstrap CIs on grounded F1 do not overlap. The gain is in the
-direction that was actually hard: the base model already abstained on
-everything it should, but *also* refused 14 answerable questions. Training
-removed all 14 without breaking abstention.
+Three things stand out:
 
-**Read this as a fine-tuning result, not a Phase 5 result.** These 147 items
-are the held-out split of the fine-tuning dataset, auto-derived from the
-corpus like the retrieval benchmark. They can compare training arms against
-each other on identical data, which is what Phase 8 needs. They cannot
-establish that VJLM answers real student questions well.
+1. **The 3B model is not measurably worse than the 7B one, once both are
+   tuned.** 0.7567 vs 0.7654, with 95% bootstrap CIs overlapping across nearly
+   their whole width — against a pre-registered noise floor of ~0.03 F1. It
+   trains 3.1× faster and answers 1.5× faster.
+2. **Fine-tuning mattered far more than which base model was picked.** The two
+   bases differ by 0.2032 F1; the two tuned arms differ by 0.0087. Llama-3B
+   base answers 43 of the 60 questions it should refuse; after training it
+   refuses all 60 while also losing all 12 of its false refusals.
+3. **`citation_rate` maxes out at 0.5918, not 1.0** — 60 of the 147 items are
+   abstention cases and an abstention cannot cite. 0.5102 means **75 of 87
+   answerable items cited, 86% of what is reachable.**
+
+Arm C (Llama-3.2-3B **QLoRA**) is training now. It is what makes LoRA-vs-QLoRA
+a controlled comparison rather than an inference.
 
 **So the next thing that matters is still Phase 5.** Retrieval, the base model
 and quantization all claim to be decided "by measurement", and every benchmark

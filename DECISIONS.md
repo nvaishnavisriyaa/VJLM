@@ -271,7 +271,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 
 ## SLM-001 — Which base model and adaptation method for VJLM
 
-- **Status:** **proposed — NOT decided.** The experiment is running; no tuned arm has produced a scored row yet. Recorded now so the design is fixed before the numbers arrive and cannot be retrofitted to them.
+- **Status:** **proposed — NOT decided.** Four of five rows are in; arm C is still training. Recorded before the numbers arrived, so the design could not be retrofitted to them. It stays `proposed` after arm C lands too — see the scope limit at the bottom.
 - **Date:** 2026-09-18
 - **Requirements:** Open weights; licence compatible with academic/on-premise deployment; instruct-tuned; LoRA/QLoRA-trainable on one 16 GB card; GGUF-convertible for CPU serving; fits the RAM budget in `FOUND-002`.
 - **Candidates / arms:**
@@ -288,17 +288,31 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   - **A ↔ C: LoRA vs QLoRA on an identical base.** Everything else is locked — examples, order, seed 42, epochs, lr, scheduler, warmup, rank, alpha, dropout, target modules, batch and effective batch, max length, chat template. Only the base-weight representation differs.
   - **C ↔ B: Llama-3.2-3B vs Mistral-7B under a matched QLoRA recipe.** This does **not** isolate parameter count — model family, architecture, tokenizer, vocabulary and pretraining all differ too, and the writeup must not claim otherwise.
 - **Experiment:** `training/run_matrix.py`, 2 epochs, effective batch 16 (2×8), max_length 1280, lr 2e-4 cosine, target modules `q,k,v,o,gate,up,down` (explicit, never left to PEFT). Scored by `evaluation/eval_generation.py --backend hf` per `FT-003`, generation locked at `temperature=0, max_new_tokens=320, seed 42`. Tokenization and masking per `FT-002`.
-- **Metrics:** **one row recorded so far.** Everything else is pending and is deliberately left blank rather than estimated.
+- **Metrics:** **four of five rows recorded.** Arm C is left blank rather than estimated.
 
-  | Arm | Role | run_id | grounded_f1 (CI95) | abstain_recall | false_abstain | citation_rate |
-  |---|---|---|---|---|---|---|
-  | B | base | `e38613e2` | **0.4401** (0.3952–0.4857, n=87) | **1.000** | 14 | 0.3605 |
-  | B | tuned | — | — | — | — | — |
-  | AC | base | — | — | — | — | — |
-  | A | tuned | — | — | — | — | — |
-  | C | tuned | — | — | — | — | — |
+  | Arm | Role | run_id | grounded_f1 (CI95) | abstain_recall | false_abstain | citation_rate | train min | s/answer |
+  |---|---|---|---|---|---|---|---|---|
+  | B | base | `e38613e2` | 0.4401 (0.3952–0.4857) | **1.000** | 14 | 0.3605 | — | 22.19 |
+  | B | tuned | `baffeb06` | **0.7654** (0.7192–0.8073) | **1.000** | **0** | 0.5102 | 230.6 | 20.16 |
+  | AC | base | `822c92ed` | 0.2369 (0.2023–0.2733) | 0.283 | 12 | 0.0204 | — | 5.83 |
+  | A | tuned | `b48d1ca6` | **0.7567** (0.7166–0.7959) | **1.000** | **0** | 0.5102 | **74.0** | **13.72** |
+  | C | tuned | — | — | — | — | — | — | — |
 
-- **Already established by that single row, before any tuning:** Mistral-7B base scores **abstain_recall 1.000** — it refuses all 60 out-of-scope questions unprompted. **That metric is saturated and cannot improve.** The headroom this fine-tune can actually address is the **14 false abstentions** (refusing when the answer *was* in context) and the **36% citation rate**. Any writeup that reports a strong abstention number as evidence the fine-tune worked would be reporting a property of the base model.
+  All rows n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items.
+
+- **`citation_rate` has a structural ceiling of 0.5918, and must never be read as if 1.0 were achievable.** Its denominator is all 147 items, but only 87 are answerable and an abstention cannot cite; 87/147 = 0.5918. Both tuned arms sit at 0.5102 = **75 of 87 answerable items cited, 86% of what is reachable.** The two arms cite 75 items each and agree on 74 of them, which is convergence on the same behaviour, not a copied number. Mistral *base* also attached citations to **10 items it abstained on**; both tuned arms do that zero times.
+
+- **Established before any tuning, from the base rows alone:** Mistral-7B base scores **abstain_recall 1.000** — it refuses all 60 out-of-scope questions unprompted. **That metric is saturated and cannot improve.** The headroom this fine-tune can actually address is the **14 false abstentions** (refusing when the answer *was* in context) and the **36% citation rate**. Any writeup that reports a strong abstention number as evidence the fine-tune worked would be reporting a property of the base model.
+- **What four rows already show — read with the A↔C caveat, since arm C is not in yet:**
+
+  1. **The two base models are not remotely comparable, and the tuned ones nearly are.** Llama-3.2-3B base is *far* worse than Mistral-7B base on every axis: grounded F1 0.2369 vs 0.4401, citation 0.0204 vs 0.3605, and critically `abstain_recall` **0.283 vs 1.000** — it answers 43 of the 60 questions it should refuse. After training, Llama-3B LoRA reaches **0.7567 (0.7166–0.7959)** against Mistral-7B QLoRA's **0.7654 (0.7192–0.8073)**. Those intervals overlap across almost their entire width; on this evaluation the 3B model is **not measurably worse than the 7B one.**
+  2. **The cost difference is not marginal.** Arm A trained in **74 minutes** against arm B's **230.6**, and generates at **13.72 s/answer** against **20.16** — 3.1× cheaper to train and 1.5× faster to score, for a difference in grounded F1 of 0.0087, which is well inside the ~0.03 noise floor this entry pre-registered. If that survives arm C and Phase 5, the 7B model is paying 3× the training cost for nothing measurable.
+  3. **Fine-tuning mattered more than base-model choice.** The gap between the two *bases* is 0.2032 F1; the gap between the two *tuned* arms is 0.0087. Both arms converge on `abstain_recall` 1.000, `false_abstain` 0 and the same 75 cited items. The behaviour being taught is apparently reachable from either starting point — which is exactly the claim the three-way separation rests on, and the first direct evidence for it.
+
+  **What none of this licenses yet:** a selection. These are templated items auto-derived from the corpus (see the scope limit below), and arm C has not run, so LoRA-vs-QLoRA is still unmeasured.
+
+- **Confirmed prediction — VRAM is bound by logits, not weights.** Arm A (3B, bf16) peaked at **10.61 GB** while arm B (7B, NF4) peaked at **7.18 GB**. The smaller model used 48% more VRAM, because Llama-3.2-3B's 128,256-token vocabulary against Mistral-v0.3's 32,768 dominates the cross-entropy tensor. `docs/hardware_profile.md` predicted this before either arm ran.
+
 - **Statistical power, acknowledged up front:** 60 of 147 test items are abstention cases, so `grounded_f1` is computed over **87 items** across four or more comparisons. Differences under ~0.03 F1 are noise. `grounded_f1` is pre-registered as primary with bootstrap 95% CIs from per-item scores; the rest are descriptive. `mean_answer_tokens` is reported alongside, because unigram token-set F1 rewards verbosity — **a gain that disappears once answer length is matched is not a gain.**
 - **Scope limit:** `evaluation/questions.jsonl` is still empty, so this is scored on 147 held-out **templated** examples. It measures grounded-answering *behaviour*, not real answer quality for real student questions — the same flattering-proxy weakness `HANDOFF.md` §3.2 records for retrieval. Phase 5 remains the blocker. Throughout, the language is **"best-performing model on the Phase 8 templated behavioural evaluation"**, never "winner".
 - **Licence note for the Phase 7 criterion:** Mistral-7B-Instruct-v0.3 is **Apache-2.0** and ungated. Llama-3.2-3B-Instruct is gated behind a **custom** Llama 3.2 Community License with a 700M-MAU clause and a "Built with Llama" attribution requirement. If VJLM may ever be distributed, that is a live constraint and `Qwen2.5-3B-Instruct` (Apache-2.0, ungated) is the drop-in substitute for arms A and C.

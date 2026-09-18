@@ -54,7 +54,7 @@ The project's central claim is **evidence-based engineering**: no component is c
 | **2b. Knowledge base — BM25** | ✅ Working | Rebuilds in **0.8 s**. Recall@5 0.911, MRR 0.803, p50 4.0 ms on the auto-derived benchmark |
 | **2b. Knowledge base — dense/hybrid** | ✅ **Now built** | 13,051 × 384. **22 chunks/sec** with `threads=cpu_count` (the 3/sec figure was the unconfigured default), ~10 min for a full build, resumable. Vectors cached by text hash, so a refresh embeds only what changed |
 | **2a. Fine-tuning dataset** | ✅ Working | 1,199 / 147 / 147. Split is by document group *before* augmentation — the previous split shared 32% of its test answers with train, making any fine-tune result unmeasurable |
-| **2a. Fine-tune** | ✅ **First arm trained and scored** | Mistral-7B QLoRA: grounded F1 **0.4401 → 0.7654** (CIs disjoint), false_abstain **14 → 0**, abstention held at 1.000. 3.8 h on the local GPU, 7.18 GB peak VRAM. Arms A and C running — see §2.1 |
+| **2a. Fine-tune** | ✅ **Two arms trained and scored** | Mistral-7B QLoRA **0.4401 → 0.7654**; Llama-3.2-3B LoRA **0.2369 → 0.7567**. Both reach abstain_recall 1.000 and false_abstain 0. The 3B arm trains 3.1× faster for no measurable loss — see §2.1 |
 | **2a. Quantization (ours)** | ❌ Blocked on the fine-tune matrix completing | Script is written and wired |
 | **3. Inference — RBAC + prompt + citations** | ✅ Working | Filters before ranking, role boosts, citations rendered |
 | **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real, but in Phase 1 every role sees the same public data, so it filters nothing in practice |
@@ -76,10 +76,10 @@ C rather than being run twice as if it were two experiments.
 
 | Arm | Model | Method | State |
 |---|---|---|---|
-| **B** | Mistral-7B-Instruct-v0.3 | QLoRA r=16 | ✅ trained + scored |
-| **A** | Llama-3.2-3B-Instruct | LoRA r=16 (bf16 base) | 🔄 training |
-| **AC** | Llama-3.2-3B-Instruct | *none* — shared baseline | ⏳ queued |
-| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | ⏳ queued |
+| **B** | Mistral-7B-Instruct-v0.3 | QLoRA r=16 | ✅ trained + scored — `baffeb06` |
+| **A** | Llama-3.2-3B-Instruct | LoRA r=16 (bf16 base) | ✅ trained + scored — `b48d1ca6` |
+| **AC** | Llama-3.2-3B-Instruct | *none* — shared baseline | ✅ scored once — `822c92ed` |
+| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | 🔄 training |
 
 What each comparison is allowed to claim:
 
@@ -94,6 +94,18 @@ What each comparison is allowed to claim:
 Scoring is held at NF4 for **every** arm, including the bf16-trained arm A, so
 that inference quantization is not a hidden second variable. Reasoning in
 `FT-003`.
+
+**Result so far — the 3B arm is holding its own.** Llama-3.2-3B LoRA scores
+0.7567 grounded F1 (95% CI 0.717–0.796) against Mistral-7B QLoRA's 0.7654
+(0.719–0.807). The intervals overlap almost entirely, and the 0.0087 gap is
+well inside this evaluation's ~0.03 noise floor. Arm A trained in 74 minutes
+against arm B's 231, and answers in 13.72 s against 20.16. Full numbers and
+caveats in `SLM-001`.
+
+**Confirmed prediction:** arm A peaked at **10.61 GB** VRAM and arm B at
+**7.18 GB** — the 3B model used 48% *more* than the 7B one, because
+Llama-3.2-3B's 128,256-token vocabulary dominates the cross-entropy tensor.
+`docs/hardware_profile.md` called this before either arm ran.
 
 **Known open item — which checkpoint is scored.** Arm B's validation loss
 bottoms at step 75 (exactly one epoch, 0.2349) and then rises monotonically
