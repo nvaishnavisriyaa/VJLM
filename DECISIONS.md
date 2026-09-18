@@ -45,6 +45,8 @@ ID prefixes: `FOUND-` foundation, `SCOPE-`, `DATA-`, `INGEST-`, `PREP-`, `EVAL-`
 - **Rejected:** `D:\VJLM` — no such volume.
 - **Revisit trigger:** A second physical drive is added, or snapshot + model storage passes ~200 GB.
 
+> **Correction, 2026-09-18 — this entry describes a different machine.** The repository lives at `C:\Users\E028.10\code\VJLM`, not `C:\VJLM`. The disk figures above (952.6 GB total, 522.6 GB free) are not this machine either: `C:` here is **474.4 GB total with 43.6 GB free**. The revisit trigger has therefore already fired in substance — model storage is the binding constraint, not a distant one. `configs/paths.yaml` has been corrected, though nothing reads it (see the note in that file).
+
 ## FOUND-002 — Target hardware profile and what it constrains
 
 - **Status:** decided
@@ -54,6 +56,8 @@ ID prefixes: `FOUND-` foundation, `SCOPE-`, `DATA-`, `INGEST-`, `PREP-`, `EVAL-`
 - **Selected:** CPU-only local inference. 15.7 GB system RAM is the binding constraint on model size, not disk and not compute.
 - **Why:** The iGPU has no CUDA support and ~1 GB addressable VRAM, so it cannot train and is not a useful inference accelerator here. Fourteen physical cores make CPU inference viable at practical speeds. After OS and browser overhead the realistic resident budget for the model is roughly 6–8 GB, which points at a 3B–8B parameter model at 4–5 bit quantization — to be confirmed by measurement in Phase 7 and Phase 9, not assumed now.
 - **Revisit trigger:** RAM upgrade, or deployment moves to a different on-premise server.
+
+> **Superseded, 2026-09-18 — both revisit conditions fired at once.** The hardware described above is a different machine. This one is an **Intel Core Ultra 7 265, 20 cores, 31.5 GB RAM, with an NVIDIA RTX 2000 Ada (16 GB VRAM, SM 8.9, native bf16)**. The conclusion *"CPU-only local inference; RAM is the binding constraint; budget 6–8 GB for the model; the iGPU cannot train"* was correct for that machine and is wrong here in every particular. Current profile and the constraints that actually bind — **disk at 43.6 GB free, and VRAM logits rather than weights** — are in [`docs/hardware_profile.md`](docs/hardware_profile.md).
 
 ## FOUND-003 — Where does fine-tuning run?
 
@@ -68,6 +72,13 @@ ID prefixes: `FOUND-` foundation, `SCOPE-`, `DATA-`, `INGEST-`, `PREP-`, `EVAL-`
 - **Revisit trigger:** Institutional GPU access becomes available, or a Phase 8 experiment shows LoRA/QLoRA gains are insufficient.
 - **Operating arrangement (2026-09-16):** Colab is driven through the in-app browser. The project owner signs in; the assistant never handles credentials. The assistant then opens the notebook, runs cells and reads output. Implications: every training run must be reproducible from a notebook committed under `training/notebooks/`, not from ad-hoc cells typed into a session, and checkpoints must be written to Drive so a reclaimed runtime does not lose the run.
 - **Runtime boundary restated:** Colab is used at Phase 8 (fine-tuning) and optionally Phase 9 (fp16 merge / GGUF conversion). It must never appear in the serving path.
+
+> **Superseded, 2026-09-18 — Colab has left the loop entirely.** This entry opens with *"No CUDA GPU exists locally."* That is no longer true: see `FOUND-002`'s correction. Phase 8 fine-tuning runs **locally** via `training/train_local.py` and `training/run_matrix.py`, and Phase 9's merge and GGUF conversion will too.
+>
+> Three consequences worth keeping rather than deleting:
+> - The **no-external-runtime constraint was never at risk** and is now trivially satisfied — the build path no longer touches any third party.
+> - The **"training must checkpoint and be resumable"** requirement survives the move, for a different reason. Colab reclaimed runtimes; here, a run killed with the session lost 48 minutes and left nothing on disk. `FT-004` records the fix.
+> - The notebooks under `training/notebooks/` are now **dead code for this machine** — they target `/content/` paths, Drive checkpoints and a free T4. They are kept as the record of the Colab-era approach, not as a runnable path.
 
 ## FOUND-004 — Base model family to shortlist
 
@@ -181,7 +192,7 @@ Automatic means no human step in steady state. Concretely:
 
 ## FT-001 — LoRA vs QLoRA for the VJLM fine-tune
 
-- **Status:** decided (method); **training not yet executed**
+- **Status:** **superseded** 2026-09-18 by `SLM-001` (base + method) and `FT-003` (measurement representation). Retained in full below, because the log records what was believed and why, not only what survived.
 - **Date:** 2026-09-16
 - **Requirements:** Train on a free Colab T4 (~15 GB VRAM). Base model must remain swappable. Output must quantize to GGUF for 16 GB CPU serving.
 - **Candidates:** full fine-tuning; LoRA; QLoRA.
@@ -192,3 +203,139 @@ Automatic means no human step in steady state. Concretely:
   - *Full fine-tuning* — no measured evidence yet that it is needed, and it risks catastrophic forgetting on a 1.5B model trained on ~1.4k behavioural examples.
 - **Note:** Training precision is independent of serving precision. The output is still quantized to Q4_K_M for CPU inference — that is `QUANT-001`, a separate decision.
 - **Revisit trigger:** Base model changes to 7B+; or Phase 8 evaluation shows LoRA gains over base are not meaningful.
+
+### Superseded because both premises failed, 2026-09-18
+
+Not because the reasoning was wrong — because two facts it rested on stopped being true.
+
+1. **The T4 left the loop.** `FOUND-003` sent training to Colab because no local CUDA GPU existed. One now does: RTX 2000 Ada, 16 GB, SM 8.9, `is_bf16_supported() == True`, verified on this machine. Every VRAM argument in this entry is denominated in a free T4's ~15 GB and no longer describes the hardware.
+2. **The 1.5B premise went with it.** This entry selects LoRA *at the selected 1.5B scale*. Qwen2.5-1.5B was never the selected model — `experiments/PLAN.md` designates it the **control arm**, which exists to prove the training path end to end. `FOUND-004` still has the base model as `proposed — NOT decided`. So "LoRA is right at 1.5B" answered a question nobody had settled.
+
+Its own revisit trigger fired on both counts: *"Base model changes to 7B+"*. `SLM-001` replaces it with a measured comparison at 3B and 7B rather than an argument from a VRAM budget that no longer applies.
+
+One judgement in it did survive contact and is worth keeping: **training precision is independent of serving precision.** `FT-003` extends that from a note into the measurement design.
+
+## FT-002 — How the training pair is built, masked and tokenized
+
+- **Status:** decided
+- **Date:** 2026-09-18
+- **Requirements:** Supervised fine-tuning must put loss on the **assistant answer only** — system, retrieved context, question and padding must all be ignored. The training prompt must be byte-identical to what `rag/retrieve.py` sends at serving time, or the model is tuned for a prompt shape it will never see. Whatever is chosen must be identical across all arms and recorded.
+- **Experiment:** `training/check_template.py` — 12 assertions per model covering loss masking, BOS accounting, pad/EOS distinctness, prefix stability and serving parity. Run against all three models before any training started, per the Phase 8 gate *"do not start training until this is confirmed."*
+- **Metrics:** 12/12 passed on all three, but only after two silent bugs were found and fixed. **Neither was visible on the Qwen control**, which is the finding that matters.
+
+  | Model | BOS with defaults | pad token | prompt-prefix stable |
+  |---|---|---|---|
+  | Qwen2.5-1.5B (control) | **none** — no BOS token at all | `<\|endoftext\|>` (151643) | yes |
+  | Mistral-7B-Instruct-v0.3 | **2** | `<unk>` (0) | **no** |
+  | Llama-3.2-3B-Instruct | **2** | `<\|finetune_right_pad_id\|>` (128004) | yes |
+
+  1. **Double BOS.** `apply_chat_template(..., tokenize=False)` emits a literal `<s>` / `<|begin_of_text|>`, and the tokenizer's default `add_special_tokens=True` then prepends BOS again. Measured: 2 with the default, 1 with `add_special_tokens=False`. Qwen2.5 has no BOS, so the control could not have exposed it.
+  2. **Mistral relocates the system message.** Its template injects the system turn next to the **last** user turn, so appending an assistant turn moves it and the full-conversation render stops being a continuation of the prompt-only render — measured divergence at character 10. Rendering prompt and completion together therefore yields a **misaligned completion mask**, and trl only logs a warning.
+
+- **Selected:** **Construct the pair, do not scrape it**, and hand trl a pre-tokenized dataset (`input_ids` + `completion_mask`), which makes it skip its own preparation entirely.
+
+  ```
+  prompt     = apply_chat_template([system, user], add_generation_prompt=True)
+  completion = assistant_answer + eos_token
+  labels     = [-100] * len(prompt_ids) + completion_ids
+  ```
+
+- **Why:** Labels are **built**, never derived from the input ids. That is what makes the standing constraint — *never mask labels via `input_ids == pad_token_id`, because when PAD and EOS share an id that silently masks genuine EOS targets* — structurally satisfied rather than merely observed: a real EOS inside the completion is trainable whatever the pad id is. The construction is also prefix-stable by definition for every model, including Mistral, and is byte-identical to the serving prompt.
+- **Rejected:**
+  - *trl's standard prompt-completion path* — tokenizes with the default `add_special_tokens=True`, producing the double BOS above.
+  - *trl's conversational path* — templates prompt and completion together to find the boundary, which is exactly the Mistral failure. A warning, not an error.
+  - *`assistant_only_loss=True`* — depends on the template exposing assistant spans reliably across three different families; the failure mode is silent and family-specific.
+  - *Masking on `input_ids == pad_token_id`* — see above. Unsafe wherever PAD and EOS coincide, and it is not obvious from the call site that they do.
+  - *Falling back to `eos_token` as pad* — avoided on all three models; each has a distinct pad. The fallback path remains in `pick_pad()` and prints a warning, because a future model may not.
+- **Also fixed here:** `pick_pad()` initially accepted Llama's `<|finetune_right_pad_id|>` **inside Mistral's vocabulary**, because `convert_tokens_to_ids` returns the `<unk>` id for tokens that are not present rather than failing. A round-trip check (`convert_ids_to_tokens(tid) == cand`) is now required.
+- **Revisit trigger:** A new base-model family enters the matrix, or `transformers`/`trl` cross a major version — both change template behaviour. Re-run `check_template.py` before trusting any run; the pins are recorded in `requirements-train.txt`.
+
+## FT-003 — Why Phase 8 is not measured in the deployment configuration
+
+- **Status:** decided
+- **Date:** 2026-09-18
+- **Requirements:** Measure whether fine-tuning changed behaviour, for five configurations, on one 16 GB GPU. The comparison must not systematically favour "fine-tuning did not help."
+- **Candidates:** merged Q4_K_M GGUF (the deployment configuration); uniform bf16; Q8_0 GGUF; **NF4 base with an unmerged bf16 adapter**.
+- **Selected:** **4-bit NF4 base, LoRA adapter attached unmerged in bf16, evaluated in-process via transformers** — for all five configurations, including the untouched base runs.
+- **Why:** A LoRA delta is small next to the weight magnitude it is added to. Q4_K_M carries ~4.5 bits with per-block scales, so a merged delta below the quantization step **rounds away entirely**. That is a floor effect pushing every arm toward a null result — and a null caused by the measurement is indistinguishable from a true null, which is the single most expensive outcome available here because it looks like a finding. Keeping the adapter unmerged means the trained delta is never quantized at all.
+
+  The obvious objection — *"both sides get the same quantization, so it controls out"* — is wrong in a specific way. It controls the **main effect** but not a (model × quant) **interaction**: quantization damage is not uniform across architectures, so the between-arm ranking can still skew even when each arm's own base/tuned pair is matched.
+
+  This choice also fixes a confound that would otherwise break the shared baseline. Arm A trains in bf16 and arm C trains in NF4, but **both are scored on an NF4 base**. Holding inference representation constant while training representation varies is what makes one untouched Llama-3.2-3B score a valid baseline for both arms — base → tuned then isolates the adapter, and nothing else.
+- **Rejected:**
+  - *Merged Q4_K_M* — the floor effect above. It also duplicates `QUANT-001`, which `experiments/PLAN.md` already scopes as an f16-referenced sweep on the best tuned model.
+  - *Uniform bf16* — 7B in bf16 is ~15.4 GB against 16.0 GB. On Windows/WDDM that does not OOM, it spills to host memory and generation crawls, so the timings would stop being comparable.
+  - *Q8_0 GGUF* — near-lossless and would reuse the HTTP path unchanged. Held as the **fallback if bitsandbytes generation proves flaky**, not chosen, because it needs a conversion step per arm and puts llama.cpp's version in the loop of a measurement that does not otherwise depend on it.
+- **Scope limit, stated rather than buried:** this measures behaviour **in a configuration that is not what gets deployed**. It does not establish that the shipped Q4_K_M build retains the gain.
+- **Revisit trigger:** `QUANT-001` in Phase 9 re-tests the best arm against an f16 reference. **If the gain measured here vanishes at Q4_K_M, that is a quantization finding, not a fine-tuning one**, and the deployment build must change — not this entry's conclusion.
+
+## SLM-001 — Which base model and adaptation method for VJLM
+
+- **Status:** **proposed — NOT decided.** The experiment is running; no tuned arm has produced a scored row yet. Recorded now so the design is fixed before the numbers arrive and cannot be retrofitted to them.
+- **Date:** 2026-09-18
+- **Requirements:** Open weights; licence compatible with academic/on-premise deployment; instruct-tuned; LoRA/QLoRA-trainable on one 16 GB card; GGUF-convertible for CPU serving; fits the RAM budget in `FOUND-002`.
+- **Candidates / arms:**
+
+  | Arm | Base | Training method |
+  |---|---|---|
+  | A | Llama-3.2-3B-Instruct | LoRA r=16, bf16 base |
+  | B | Mistral-7B-Instruct-v0.3 | QLoRA r=16, NF4 base |
+  | C | Llama-3.2-3B-Instruct | QLoRA r=16, NF4 base |
+
+  Five unique configurations, not six: **A and C share one untouched Llama-3.2-3B base, measured once** and reused as the baseline for both. Arm C exists because A↔B changes model *and* method simultaneously, which violates the one-variable rule in `experiments/README.md`.
+- **What each comparison licenses:**
+  - base → A: the effect of LoRA. base → C: the effect of QLoRA.
+  - **A ↔ C: LoRA vs QLoRA on an identical base.** Everything else is locked — examples, order, seed 42, epochs, lr, scheduler, warmup, rank, alpha, dropout, target modules, batch and effective batch, max length, chat template. Only the base-weight representation differs.
+  - **C ↔ B: Llama-3.2-3B vs Mistral-7B under a matched QLoRA recipe.** This does **not** isolate parameter count — model family, architecture, tokenizer, vocabulary and pretraining all differ too, and the writeup must not claim otherwise.
+- **Experiment:** `training/run_matrix.py`, 2 epochs, effective batch 16 (2×8), max_length 1280, lr 2e-4 cosine, target modules `q,k,v,o,gate,up,down` (explicit, never left to PEFT). Scored by `evaluation/eval_generation.py --backend hf` per `FT-003`, generation locked at `temperature=0, max_new_tokens=320, seed 42`. Tokenization and masking per `FT-002`.
+- **Metrics:** **one row recorded so far.** Everything else is pending and is deliberately left blank rather than estimated.
+
+  | Arm | Role | run_id | grounded_f1 (CI95) | abstain_recall | false_abstain | citation_rate |
+  |---|---|---|---|---|---|---|
+  | B | base | `e38613e2` | **0.4401** (0.3952–0.4857, n=87) | **1.000** | 14 | 0.3605 |
+  | B | tuned | — | — | — | — | — |
+  | AC | base | — | — | — | — | — |
+  | A | tuned | — | — | — | — | — |
+  | C | tuned | — | — | — | — | — |
+
+- **Already established by that single row, before any tuning:** Mistral-7B base scores **abstain_recall 1.000** — it refuses all 60 out-of-scope questions unprompted. **That metric is saturated and cannot improve.** The headroom this fine-tune can actually address is the **14 false abstentions** (refusing when the answer *was* in context) and the **36% citation rate**. Any writeup that reports a strong abstention number as evidence the fine-tune worked would be reporting a property of the base model.
+- **Statistical power, acknowledged up front:** 60 of 147 test items are abstention cases, so `grounded_f1` is computed over **87 items** across four or more comparisons. Differences under ~0.03 F1 are noise. `grounded_f1` is pre-registered as primary with bootstrap 95% CIs from per-item scores; the rest are descriptive. `mean_answer_tokens` is reported alongside, because unigram token-set F1 rewards verbosity — **a gain that disappears once answer length is matched is not a gain.**
+- **Scope limit:** `evaluation/questions.jsonl` is still empty, so this is scored on 147 held-out **templated** examples. It measures grounded-answering *behaviour*, not real answer quality for real student questions — the same flattering-proxy weakness `HANDOFF.md` §3.2 records for retrieval. Phase 5 remains the blocker. Throughout, the language is **"best-performing model on the Phase 8 templated behavioural evaluation"**, never "winner".
+- **Licence note for the Phase 7 criterion:** Mistral-7B-Instruct-v0.3 is **Apache-2.0** and ungated. Llama-3.2-3B-Instruct is gated behind a **custom** Llama 3.2 Community License with a 700M-MAU clause and a "Built with Llama" attribution requirement. If VJLM may ever be distributed, that is a live constraint and `Qwen2.5-3B-Instruct` (Apache-2.0, ungated) is the drop-in substitute for arms A and C.
+- **Revisit trigger:** Phase 5 produces a real question set — this entry must then be re-measured, not merely cited. Also if `QUANT-001` shows the gain does not survive Q4_K_M (see `FT-003`), or if a materially better open model in the 3B–8B range appears.
+- **Supersedes:** `FT-001`, and answers the question `FOUND-004` deferred.
+
+## FT-004 — How a multi-hour training run survives
+
+- **Status:** decided
+- **Date:** 2026-09-18
+- **Requirements:** One training arm runs ~3.5 h and the full Phase 8 matrix ~11 h. It must survive the lifetime of whatever started it, and an interruption must not cost the whole run.
+- **Experiment:** Not designed — **observed.** Arm B was first launched as a background shell owned by the editor session. The session exited and training died at **step 34 of 150**, 47 minutes 51 seconds in, leaving an empty adapter directory. `save_strategy="epoch"` put the first checkpoint at step 75, so nothing was recoverable.
+- **Metrics:** Mistral-7B QLoRA steady-state throughput is **~84 s/optimizer step** at effective batch 16 (measured across two independent launches: 83.4–85.5 s/it). The Phase 8 plan had budgeted arm B at 36 min for 3 epochs, which implies **9.6 s/step** — an **~8.7× underestimate**, and it was inferred rather than measured.
+- **Selected:** three changes, all of which follow from that one number.
+  1. **Detached launch.** `training/run_matrix.py` is started through WMI `Win32_Process.Create`, which parents it to `WmiPrvSE` rather than the calling shell, so it sits outside any job object that a session teardown would close. Verified by inspecting `ParentProcessId` after launch.
+  2. **`save_steps=25`, not `save_strategy="epoch"`.** Bounds the cost of any kill to ~35 min instead of ~1h45m.
+  3. **`--resume`**, resuming from the newest `checkpoint-*` in the adapter directory, with every matrix stage idempotent — a training stage is complete when `run.json` exists, a scoring stage when its `(arm, role)` row is already in `generation_results.jsonl`. Re-running the driver after any interruption continues rather than restarting.
+- **Why:** The Phase 8 plan explicitly rejected resume logic: *"Skip `--resume`: 225 steps is ~36 min for the longest arm, and `save_strategy="epoch"` + `save_total_limit=1` means restarting is cheaper than the code."* That reasoning was sound **given its premise** and wrong because the premise was an unmeasured estimate. At 9.6 s/step, restarting genuinely is cheaper than the code. At 84 s/step it is not, and the difference is the whole argument.
+
+  This is the specific failure mode `experiments/README.md` is built to prevent — a number that was *assumed*, propagated into a design decision, and only surfaced when the decision it justified failed. It cost 48 minutes, which is cheap for the lesson.
+- **Also changed:** `save_total_limit` removed entirely, and `eval_strategy="steps"` with `eval_steps=25`. Per-epoch evaluation yields 2 points per arm, which cannot distinguish "converged" from "stopped". Six points can, and keeping every checkpoint is what makes that curve **actionable** rather than merely descriptive — if validation loss turns, the earlier checkpoint still exists. Cost is ~2.5 GB per 7B arm against 43.6 GB free, and ~12% added wall-clock for the extra eval passes.
+
+  This paid for itself on the first run it was active for. Arm B's full validation curve, now complete:
+
+  | step | epoch | eval_loss |
+  |---|---|---|
+  | 25 | 0.33 | 0.2728 |
+  | 50 | 0.67 | 0.2376 |
+  | 75 | 1.00 | **0.2349 — best** |
+  | 100 | 1.33 | 0.2627 |
+  | 125 | 1.67 | 0.2706 |
+  | 150 | 2.00 | 0.2754 |
+
+  It bottoms at **step 75, exactly one epoch**, and rises monotonically for the whole of epoch 2. Three consecutive rising points is not noise — the second epoch is memorisation, and final `train_loss` of **0.1443** against `eval_loss` of **0.2754** says the same thing. Under the original per-epoch / `save_total_limit=1` configuration this would have been invisible: two eval points, one checkpoint, and the over-fit final adapter scored as though it were the trained model. The cost of seeing it was ~12% wall-clock and 2.5 GB of disk.
+- **Rejected:**
+  - *Windows Scheduled Task* — also fully detaches, and is the fallback if WMI ever proves unreliable. Not chosen because it leaves a registered task to clean up and needs no scheduling semantics here; this is one run, now.
+  - *`Start-Process` alone* — does not reliably escape a job object with `KILL_ON_JOB_CLOSE`, which is exactly the failure being fixed.
+  - *Keeping the harness-tracked background shell* — simplest, and the thing that failed. Acceptable only with resume in place, and even then it wastes up to `save_steps` of work on every session end.
+- **Known cost of detaching:** the run is invisible to the launching session's task tracking, so no completion notification arrives automatically. Progress is exposed through `experiments/matrix.log` and `experiments/matrix_status.json` instead. Note that `matrix_status.json`'s `heartbeat` is written **only at stage boundaries** and is therefore not a liveness signal during a 3.5 h stage — use the log file's modification time.
+- **Revisit trigger:** A training stage drops below ~20 min (a much smaller model, or a much faster card), at which point the original "restarting is cheaper than the code" argument becomes true again. Or the run moves to a machine where a scheduler exists and should own it.

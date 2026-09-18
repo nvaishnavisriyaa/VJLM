@@ -8,18 +8,22 @@ It was chosen for **speed of getting a pipeline standing up**, not on merit. A 1
 
 ## SLM-001 — Base model candidates
 
-All candidates get the **same retrieved context** and the **same held-out questions**, on this machine (i7-12700H, 15.7 GB RAM, CPU only).
+All candidates get the **same retrieved context** and the **same held-out questions**, on this machine. Hardware corrected 2026-09-18: **Intel Core Ultra 7 265, 31.5 GB RAM, NVIDIA RTX 2000 Ada 16 GB (SM 8.9, native bf16)** - see `docs/hardware_profile.md`. The "i7-12700H, 15.7 GB, CPU only" figures previously here described a different machine.
 
-| Candidate | Params | Q4_K_M size | Fits 15.7 GB? | Trainable on free T4 |
+| Candidate | Params | Q4_K_M size | Fits 31.5 GB RAM? | Trainable on 16 GB VRAM |
 |---|---|---|---|---|
-| Qwen2.5-1.5B-Instruct | 1.5B | ~1.0 GB | Easily | **LoRA** (bf16 base ≈ 3 GB) |
-| Llama-3.2-3B-Instruct | 3B | ~2.0 GB | Comfortably | **LoRA** (bf16 ≈ 6 GB) |
-| Mistral-7B-Instruct-v0.3 | 7B | ~4.4 GB | Yes, with margin | **QLoRA** — bf16 ≈ 14 GB, will not fit with optimizer state |
-| Llama-3.1-8B-Instruct | 8B | ~4.9 GB | Yes, tightest | **QLoRA** |
+| Qwen2.5-1.5B-Instruct | 1.5B | ~1.0 GB | Easily | **LoRA** (bf16 base ≈ 3 GB) — *control arm* |
+| Llama-3.2-3B-Instruct | 3B | ~2.0 GB | Comfortably | **LoRA** (bf16 ≈ 6 GB) — *arm A*; also **QLoRA** as *arm C* |
+| Mistral-7B-Instruct-v0.3 | 7B | ~4.4 GB | Yes, with margin | **QLoRA** — *arm B*; bf16 ≈ 15.4 GB vs 16.0 GB, will not fit with optimizer state |
+| Llama-3.1-8B-Instruct | 8B | ~4.9 GB | Yes | **QLoRA** — not run in Phase 8 |
 
-**The LoRA-vs-QLoRA comparison falls out of this table rather than being invented.** Small models can be LoRA-trained in bf16; 7B/8B cannot fit on a free T4 that way. So the method is partly determined by the model, and the honest experiment is *(model, method)* pairs — not method in isolation.
+**The LoRA-vs-QLoRA comparison falls partly out of this table rather than being invented.** ≤3B can be LoRA-trained in bf16; 7B/8B cannot on 16 GB once optimizer state is counted. So method is partly determined by model, and the honest experiment is *(model, method)* pairs — not method in isolation. Arm C exists precisely so that one *(model, method)* pair is held fixed on the model side, isolating the method.
 
-Serving-side note: every candidate fits 15.7 GB at Q4. The constraint that actually bites is **RAM shared with the embedder, index and browser**, so peak RSS is measured with the whole stack loaded, not the model alone.
+**Corrected 2026-09-18.** This table previously read "Fits 15.7 GB?" and "Trainable on free T4", which described the old laptop and Colab. Both are gone: training is local on a 16 GB RTX 2000 Ada, and the machine has 31.5 GB RAM. See `docs/hardware_profile.md` and `SLM-001`.
+
+**The VRAM constraint is not the weights — it is the logits.** Cross-entropy materialises `batch × seq × vocab` at ~10 bytes per token per vocab entry. Llama-3.2-3B's **128,256**-token vocab against Mistral-7B-v0.3's **32,768** makes the 3B arm *tighter per token* than the 7B one, despite being under half the size.
+
+Serving-side note: every candidate fits at Q4 with room to spare now. The constraint that actually bites on this machine is **disk** — 43.6 GB free, with 19.5 GB already held by the two HF caches — not RAM. Peak RSS is still measured with the whole stack loaded, not the model alone.
 
 ## FT-001 — Fine-tuning method
 

@@ -1,12 +1,23 @@
-# Canonical paths. Code reads these — never hard-code a path or a model name.
+# Canonical paths.
+#
+# ASPIRATIONAL, NOT LOAD-BEARING (verified 2026-09-18). Nothing imports this
+# file. Every module derives its paths from `ROOT = dirname(dirname(__file__))`
+# and hard-codes the rest, so editing a value here changes no behaviour. Only
+# configs/ingestion.yaml is actually read (by ingestion/refresh.py).
+#
+# It is kept as the intended layout and as documentation, but the previous
+# header claimed "Code reads these — never hard-code a path", which was not
+# true and would mislead anyone who changed a value expecting an effect.
 version: 1
 
-root: "C:/VJLM"
+# Corrected 2026-09-18: was "C:/VJLM", which is not where the repo lives and
+# never was on this machine. See FOUND-001.
+root: "C:/Users/E028.10/code/VJLM"
 
 ingestion:
   registry: "ingestion/sources.yaml"
   snapshots: "ingestion/snapshots"
-  state: "ingestion/state/sync_state.jsonl"
+  state: "ingestion/state/sync_state.json"   # .json, not .jsonl - it is one dict, not a record stream
 
 data_catalog: "data_catalog/catalog.csv"
 

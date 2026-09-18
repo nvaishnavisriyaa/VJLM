@@ -1,0 +1,23 @@
+# Phase 8 fine-tuning stack. PINNED DELIBERATELY, not resolved.
+#
+# torch is NOT listed: 2.5.1+cu121 is already installed system-wide for
+# Python 3.10 and .venv310 is created with --system-site-packages to reuse it.
+# Reinstalling torch would cost ~2.5 GB of disk this machine does not have.
+#
+# Hardware this set was verified against:
+#   NVIDIA RTX 2000 Ada, 16 GB, SM 8.9 (native bf16), driver 596.71
+#   Python 3.10.11, torch 2.5.1+cu121
+#
+# Do NOT relax these to ">=". PyPI currently serves transformers 5.x and
+# trl 1.x, both major versions past what training/train_local.py was written
+# against; unconstrained resolution silently changes the training API.
+transformers==4.56.2
+trl==0.23.0
+peft==0.17.1
+datasets==3.6.0
+accelerate==1.10.1
+bitsandbytes==0.47.0
+
+# Mistral's tokenizer.model requires these; not pulled in automatically.
+sentencepiece==0.2.0
+protobuf==5.29.5

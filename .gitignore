@@ -51,3 +51,12 @@ desktop.ini
 runtime/llama/**
 runtime/*.zip
 runtime/*.log
+
+# Training venv (Python 3.10, built locally by requirements-train.txt)
+.venv310/
+
+# Phase 8 driver transient output — raw tqdm redraws and live stage state.
+# The evidence is experiments/generation_results.jsonl and each adapter's
+# run.json, not this.
+experiments/matrix.log
+experiments/matrix_status.json
