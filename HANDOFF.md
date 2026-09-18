@@ -60,7 +60,7 @@ The project's central claim is **evidence-based engineering**: no component is c
 | **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real, but in Phase 1 every role sees the same public data, so it filters nothing in practice |
 | **4. Local infra — CPU serving** | ✅ Working | 19.4 tok/s, full answer in **8.75 s** |
 | **Scheduler (self-maintaining)** | ✅ **Now wired** | Not Task Scheduler — `ingestion/refresh.py` runs when the app starts. Per-source intervals; a cycle with nothing due costs **0.08 s** |
-| **Benchmark-driven model comparison** | 🔄 **Running** | 2 of 5 configurations scored. Driver is `training/run_matrix.py`; plan in [`experiments/PLAN.md`](experiments/PLAN.md) |
+| **Benchmark-driven model comparison** | ⚠️ **4 of 5 scored** | Arm C blocked on VRAM (`FT-005`), so LoRA-vs-QLoRA is unmeasured. Driver is `training/run_matrix.py`; plan in [`experiments/PLAN.md`](experiments/PLAN.md) |
 | **Phase 5 human benchmark** | ❌ **Not started — now the blocker** | `evaluation/questions.jsonl` and `gold_sources.jsonl` are empty files |
 
 **In one line: the data pipeline is complete and automatic, RAG has both
@@ -79,7 +79,7 @@ C rather than being run twice as if it were two experiments.
 | **B** | Mistral-7B-Instruct-v0.3 | QLoRA r=16 | ✅ trained + scored — `baffeb06` |
 | **A** | Llama-3.2-3B-Instruct | LoRA r=16 (bf16 base) | ✅ trained + scored — `b48d1ca6` |
 | **AC** | Llama-3.2-3B-Instruct | *none* — shared baseline | ✅ scored once — `822c92ed` |
-| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | 🔄 training |
+| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | ❌ **failed — exceeds 16 GB VRAM**, see `FT-005` |
 
 What each comparison is allowed to claim:
 

@@ -296,9 +296,9 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   | B | tuned | `baffeb06` | **0.7654** (0.7192–0.8073) | **1.000** | **0** | 0.5102 | 230.6 | 20.16 |
   | AC | base | `822c92ed` | 0.2369 (0.2023–0.2733) | 0.283 | 12 | 0.0204 | — | 5.83 |
   | A | tuned | `b48d1ca6` | **0.7567** (0.7166–0.7959) | **1.000** | **0** | 0.5102 | **74.0** | **13.72** |
-  | C | tuned | — | — | — | — | — | — | — |
+  | C | tuned | **failed** | — | — | — | — | — | — |
 
-  All rows n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items.
+  All *completed* rows are n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items. **Arm C did not train to completion — see `FT-005`.** It is left as `failed`, not quietly dropped, because the A↔C comparison this entry is built around is currently *unmeasured*, and an entry that silently listed four arms would read as though five had been planned.
 
 - **`citation_rate` has a structural ceiling of 0.5918, and must never be read as if 1.0 were achievable.** Its denominator is all 147 items, but only 87 are answerable and an abstention cannot cite; 87/147 = 0.5918. Both tuned arms sit at 0.5102 = **75 of 87 answerable items cited, 86% of what is reachable.** The two arms cite 75 items each and agree on 74 of them, which is convergence on the same behaviour, not a copied number. Mistral *base* also attached citations to **10 items it abstained on**; both tuned arms do that zero times.
 
@@ -309,7 +309,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   2. **The cost difference is not marginal.** Arm A trained in **74 minutes** against arm B's **230.6**, and generates at **13.72 s/answer** against **20.16** — 3.1× cheaper to train and 1.5× faster to score, for a difference in grounded F1 of 0.0087, which is well inside the ~0.03 noise floor this entry pre-registered. If that survives arm C and Phase 5, the 7B model is paying 3× the training cost for nothing measurable.
   3. **Fine-tuning mattered more than base-model choice.** The gap between the two *bases* is 0.2032 F1; the gap between the two *tuned* arms is 0.0087. Both arms converge on `abstain_recall` 1.000, `false_abstain` 0 and the same 75 cited items. The behaviour being taught is apparently reachable from either starting point — which is exactly the claim the three-way separation rests on, and the first direct evidence for it.
 
-  **What none of this licenses yet:** a selection. These are templated items auto-derived from the corpus (see the scope limit below), and arm C has not run, so LoRA-vs-QLoRA is still unmeasured.
+  **What none of this licenses yet:** a selection. These are templated items auto-derived from the corpus (see the scope limit below), and **arm C failed to train**, so LoRA-vs-QLoRA remains unmeasured. The 3B-matches-7B result in (1) stands on its own — it does not depend on arm C — but it is a *(model, method)* result, not a statement about 3B models in general.
 
 - **Confirmed prediction — VRAM is bound by logits, not weights.** Arm A (3B, bf16) peaked at **10.61 GB** while arm B (7B, NF4) peaked at **7.18 GB**. The smaller model used 48% more VRAM, because Llama-3.2-3B's 128,256-token vocabulary against Mistral-v0.3's 32,768 dominates the cross-entropy tensor. `docs/hardware_profile.md` predicted this before either arm ran.
 
@@ -353,3 +353,27 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   - *Keeping the harness-tracked background shell* — simplest, and the thing that failed. Acceptable only with resume in place, and even then it wastes up to `save_steps` of work on every session end.
 - **Known cost of detaching:** the run is invisible to the launching session's task tracking, so no completion notification arrives automatically. Progress is exposed through `experiments/matrix.log` and `experiments/matrix_status.json` instead. Note that `matrix_status.json`'s `heartbeat` is written **only at stage boundaries** and is therefore not a liveness signal during a 3.5 h stage — use the log file's modification time.
 - **Revisit trigger:** A training stage drops below ~20 min (a much smaller model, or a much faster card), at which point the original "restarting is cheaper than the code" argument becomes true again. Or the run moves to a machine where a scheduler exists and should own it.
+
+## FT-005 — Why arm C (Llama-3.2-3B QLoRA) does not fit in 16 GB
+
+- **Status:** **open — blocking the A↔C comparison.** Recorded as a failure, not resolved.
+- **Date:** 2026-09-19
+- **What happened:** Arm C trained normally for 44 of 150 steps at ~36 s/step, completed its step-25 evaluation (`eval_loss` 0.3468) and saved `checkpoint-25`. At step 45 it stopped advancing. Thirty minutes later the step counter had not moved, while the GPU sat at **100% utilisation** and **15.92 GB of 16.38 GB VRAM**, and the process burned ~2 CPU cores. It was killed; VRAM immediately fell to 1.28 GB, confirming the training process held all of it.
+- **This is the failure mode `docs/hardware_profile.md` warns about.** Windows/WDDM does not raise `OutOfMemoryError` — CUDA spills into shared host memory and the run degrades to PCIe speed instead of stopping. A step that took 36 s had not completed in 48× that. **A crash-free run is not proof it fitted, and a *hung* run is not proof of a hang.**
+- **Mechanism, verified from source rather than inferred:** `peft.prepare_model_for_kbit_training` casts **every non-`Params4bit` parameter to fp32** — confirmed by reading `peft/utils/other.py` at the installed version 0.17.1. bitsandbytes leaves `lm_head` out of 4-bit quantization by default, so on Llama-3.2-3B the tied **128,256 × 3,072 embedding — 394M parameters — is upcast from bf16 to fp32**, and the logits it produces are fp32 too.
+
+  | | vocab | head params | head in fp32 | logits @ batch 2 × 1280 |
+  |---|---|---|---|---|
+  | Mistral-7B-v0.3 (arm B) | 32,768 | 134M | 0.54 GB | 0.34 GB |
+  | Llama-3.2-3B (arm C) | **128,256** | **394M** | **1.58 GB** | **1.31 GB** |
+
+  Arm B survives this because its vocabulary is a quarter the size. Arm A survives it because plain LoRA never calls `prepare_model_for_kbit_training`, so its head stays bf16.
+- **The counterintuitive part, stated plainly:** **QLoRA needed *more* VRAM than LoRA on the same model.** Arm A (bf16 base) peaked at 10.61 GB and finished; arm C (NF4 base) exceeded 16 GB and did not. Quantizing the base saved ~4 GB of weights and then spent more than that upcasting a very large embedding to fp32. This inverts the usual reason for reaching for QLoRA, and it is specific to *(large vocabulary, small model)*.
+- **Why it ran 44 steps first:** peak memory is batch-content dependent. Examples vary in length up to the 1280-token cap, so most micro-batches are well under the worst case; steps 1–44 drew short enough pairs. This is why the failure looked like a hang partway through rather than an error at step 1, and why "it started fine" is not evidence of fit.
+- **Not yet decided — every fix costs something the plan locked:** `SLM-001` locks batch, effective batch and max sequence length for A↔C precisely so the method is the only difference. Reducing any of them to make arm C fit would make A↔C a comparison of *two* variables, which is the thing this experiment exists to avoid. The candidate responses, none chosen:
+  - *Skip the fp32 upcast and keep `lm_head` in bf16* — cheapest, and does not touch a locked hyperparameter, but it makes arm C's recipe differ from arm B's, weakening C↔B.
+  - *Per-device batch 1 × accum 16* — holds effective batch at 16, but per-device batch is itself locked, and micro-batch size changes token-vs-sequence loss weighting under accumulation, so it is not a no-op.
+  - *Rerun **both** A and C at settings that fit* — the only option that keeps A↔C strictly controlled. Costs ~74 min plus arm C's full run.
+  - *Accept that the comparison cannot be made on this hardware* and report A↔C as not measured. Honest, and cheapest, but leaves `FT-001`'s central question open.
+- **Revisit trigger:** a card with more than 16 GB, or a decision from the above list. Whichever comes first.
+- **What survives regardless:** arm C's failure does not touch arms A and B. The finding that tuned Llama-3.2-3B matches tuned Mistral-7B on this evaluation rests on `b48d1ca6` and `baffeb06`, both complete and both scored on all 147 items.
