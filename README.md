@@ -25,6 +25,7 @@ Derived from the plan:
 | [`data_catalog/classification.md`](data_catalog/classification.md) | Phase 2 — fine-tune vs RAG across all 14 public categories |
 | [`experiments/PLAN.md`](experiments/PLAN.md) | Phases 6–9 — which models, FT methods, quantizations and retrievers get compared |
 | [`docs/phase1_site_recon.md`](docs/phase1_site_recon.md) | Phase 1 — 9 measured findings about the VNRVJIET site |
+| [`docs/finetuning.md`](docs/finetuning.md) | Phase 8 — where the trained models are, what they are, how they were trained, what they scored |
 
 ## The three-way separation
 
