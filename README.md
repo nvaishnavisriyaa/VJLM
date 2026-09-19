@@ -90,7 +90,7 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. Still the blocking item for *selection* |
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
-| 8 fine-tuning | **Arms A and B done; arm C rerunning.** Both baselines scored. Arm C's VRAM blocker is fixed — see `FT-005` |
+| 8 fine-tuning | **Arms A and B done; arm C blocked.** Both baselines scored. Arm C exceeds 16 GB VRAM; two fixes tried, see `FT-005` |
 | 9 quantization | Blocked on Phase 8 |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
@@ -133,11 +133,16 @@ Llama-3.2-3B that is the tied 128,256 × 3,072 embedding — 394M parameters,
 1.58 GB in fp32, with fp32 logits on top. **QLoRA needed more VRAM than LoRA
 on the same model**, which is specific to a large vocabulary on a small model.
 
-The fix keeps that frozen head in bf16, which is what the LoRA arm already
-did — so it removes an uncontrolled difference between A and C rather than
-introducing one. Steady-state VRAM went **15.92 GB (thrashing) → 10.57 GB**,
-against arm A's 10.61 GB, at unchanged speed. Restarted from step 0 rather
-than resumed, so the whole run uses one configuration. See `FT-005`.
+Keeping that frozen head in bf16 cut steady-state VRAM from **15.92 GB to
+10.57 GB** against arm A's 10.61 GB, at unchanged speed and with the step-25
+eval loss unchanged to 1e-4 — but **it did not fix the failure.** The rerun
+froze at the same step 44, at 16.02 GB. With a fixed seed and dataset order
+that step draws the same batch every time, so the failure is deterministic.
+The remaining difference between arms A and C on that batch is **not yet
+explained**, and `FT-005` records that rather than a guess. Lowering the
+sequence cap is not available — it is already above the longest real example,
+so it would change nothing. The remaining lever is the micro-batch size, which
+would require rerunning arm A too in order to keep the comparison controlled.
 
 **So the next thing that matters is still Phase 5.** Retrieval, the base model
 and quantization all claim to be decided "by measurement", and every benchmark
