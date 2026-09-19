@@ -207,6 +207,30 @@ def main():
     # FT-005: the head is frozen here (LoRA targets q,k,v,o,gate,up,down), so
     # nothing is optimized in fp32 through it, and keeping it bf16 matches what
     # the LoRA arm already does - which makes A<->C more controlled, not less.
+    # Diagnostic only, off by default. Windows/WDDM does not raise
+    # OutOfMemoryError when VRAM runs out - CUDA spills into shared host memory
+    # and the run degrades to PCIe speed, which looks like a hang with no
+    # traceback and no allocation site. Capping the caching allocator forces a
+    # real Python exception at a known ceiling instead, and logs per-step peak
+    # so the growth curve is visible rather than only the final failure.
+    ap.add_argument("--vram-cap", type=float, default=0.0,
+                    help="fraction of device VRAM the allocator may use "
+                         "(e.g. 0.92); also logs per-step peak memory")
+    # The real arm C blocker was never the memory REQUIREMENT - measured peak
+    # allocated is 4.9-6.2 GB, below arm A's 10.61 - it was the caching
+    # allocator RESERVING 13.21 GB to serve 6.18 GB of live tensors, a 2.14x
+    # ratio that ratchets upward and never comes back down. Sequence lengths
+    # vary per batch and bitsandbytes dequantizes NF4 weights into short-lived
+    # buffers on every forward and again in backward under checkpointing, so
+    # cached blocks stop matching the next request. expandable_segments, the
+    # canonical fix, is not supported on Windows. This is memory management
+    # only: it changes no hyperparameter and no arithmetic, which is why arm A
+    # does not need rerunning for A<->C to stay controlled. See FT-005.
+    ap.add_argument("--alloc-guard", action="store_true",
+                    help="bound allocator fragmentation: set "
+                         "PYTORCH_CUDA_ALLOC_CONF and release cached blocks "
+                         "every --alloc-guard-steps steps")
+    ap.add_argument("--alloc-guard-steps", type=int, default=1)
     ap.add_argument("--no-fp32-head", action="store_true",
                     help="QLoRA: keep the tied embedding/lm_head in the compute "
                          "dtype instead of letting PEFT upcast it to fp32")
@@ -258,9 +282,23 @@ def main():
     assert_no_leakage()
 
     print("[2/5] hardware + seed")
+    if a.alloc_guard:
+        # Must be set before torch initialises CUDA, hence before this import.
+        # garbage_collection_threshold reclaims cached blocks once reserved
+        # passes the fraction given; max_split_size_mb stops large blocks being
+        # split into pieces that later cannot be recombined.
+        conf = "garbage_collection_threshold:0.7,max_split_size_mb:256"
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", conf)
+        print("  ALLOC GUARD PYTORCH_CUDA_ALLOC_CONF=%s, empty_cache every %d step(s)"
+              % (os.environ["PYTORCH_CUDA_ALLOC_CONF"], a.alloc_guard_steps))
     import torch
     if not torch.cuda.is_available():
         sys.exit("ABORT: no CUDA device visible. torch.cuda.is_available() is False.")
+    if a.vram_cap:
+        total = torch.cuda.get_device_properties(0).total_memory / 2**30
+        torch.cuda.set_per_process_memory_fraction(a.vram_cap)
+        print("  VRAM CAP %.2f of %.2f GB = %.2f GB; allocator will raise "
+              "instead of spilling" % (a.vram_cap, total, a.vram_cap * total))
     bf16 = pick_precision(torch)
     random.seed(a.seed)
     torch.manual_seed(a.seed)
@@ -387,6 +425,40 @@ def main():
                          peft_config=LoraConfig(**lora_kwargs(
                              a.lora_r, a.lora_alpha, a.lora_dropout, tm)),
                          **tkw)
+    if a.alloc_guard:
+        from transformers import TrainerCallback
+
+        class AllocGuard(TrainerCallback):
+            """Hand cached-but-unused blocks back to the driver. Reserved is
+            what overruns the card here, not allocated, so this is the knob
+            that matters - and it is why the run also reports reserved."""
+            def on_step_end(self, args_, state, control, **kw):
+                if state.global_step % a.alloc_guard_steps == 0:
+                    torch.cuda.empty_cache()
+                if state.global_step % 25 == 0:
+                    print("    step %3d  alloc %5.2f GB  reserved %5.2f GB"
+                          % (state.global_step,
+                             torch.cuda.max_memory_allocated() / 2**30,
+                             torch.cuda.max_memory_reserved() / 2**30), flush=True)
+                    torch.cuda.reset_peak_memory_stats()
+
+        trainer.add_callback(AllocGuard())
+
+    if a.vram_cap:
+        from transformers import TrainerCallback
+
+        class PeakMem(TrainerCallback):
+            """Per-step peak allocated, reset each step so the number is that
+            step's own high-water mark rather than the run's."""
+            def on_step_end(self, args_, state, control, **kw):
+                peak = torch.cuda.max_memory_allocated() / 2**30
+                resv = torch.cuda.max_memory_reserved() / 2**30
+                print("    step %3d  peak_alloc %6.2f GB  peak_resv %6.2f GB"
+                      % (state.global_step, peak, resv), flush=True)
+                torch.cuda.reset_peak_memory_stats()
+
+        trainer.add_callback(PeakMem())
+
     ckpts = sorted(glob.glob(os.path.join(out_dir, "checkpoint-*")),
                    key=lambda q: int(q.rsplit("-", 1)[-1]))
     resumed_from = None

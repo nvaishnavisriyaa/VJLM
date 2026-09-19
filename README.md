@@ -91,59 +91,54 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. Still the blocking item for *selection* |
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
-| 8 fine-tuning | **Arms A and B done; arm C blocked.** Both baselines scored. Arm C exceeds 16 GB VRAM; two fixes tried, see `FT-005` |
+| 8 fine-tuning | **All 5 configurations scored.** LoRA vs QLoRA measured; best-checkpoint rows pending |
 | 9 quantization | Blocked on Phase 8 |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
 
-### Phase 8 — fine-tuning results so far
+### Phase 8 — fine-tuning results
 
-Four of five configurations scored on the same 147 held-out items, same seed,
-same decode settings. Raw rows in
+All five configurations scored on the same 147 held-out items, same seed, same
+decode settings, 147/147 succeeded on every row. Raw rows in
 [`experiments/generation_results.jsonl`](experiments/generation_results.jsonl).
 
-| | Mistral-7B base | **Mistral-7B QLoRA** | Llama-3.2-3B base | **Llama-3.2-3B LoRA** |
-|---|---|---|---|---|
-| grounded_f1 | 0.4401 | **0.7654** `[0.719, 0.807]` | 0.2369 | **0.7567** `[0.717, 0.796]` |
-| abstain_recall | 1.0000 | 1.0000 | 0.2833 | **1.0000** |
-| false_abstain | 14 / 87 | **0** | 12 / 87 | **0** |
-| citation_rate | 0.3605 | **0.5102** | 0.0204 | **0.5102** |
-| train minutes | — | 230.6 | — | **74.0** |
-| s / answer | 22.19 | 20.16 | 5.83 | **13.72** |
+| | Mistral-7B base | **7B QLoRA** | Llama-3B base | **3B LoRA** | **3B QLoRA** |
+|---|---|---|---|---|---|
+| grounded_f1 | 0.4401 | **0.7654** | 0.2369 | **0.7567** | **0.7567** |
+| abstain_recall | 1.0000 | 1.0000 | 0.2833 | 1.0000 | 1.0000 |
+| false_abstain | 14 / 87 | **0** | 12 / 87 | **0** | **0** |
+| citation_rate | 0.3605 | 0.5102 | 0.0204 | 0.5102 | 0.5170 |
+| train minutes | — | 230.6 | — | **74.0** | 105.1 |
+| peak VRAM | — | 7.18 GB | — | 10.61 GB | **4.88 GB** |
+| s / answer | 22.19 | 20.16 | 5.83 | 13.72 | **13.24** |
 
-Three things stand out:
+**1. LoRA and QLoRA are behaviourally indistinguishable here.** The controlled
+A↔C comparison — identical data, order, seed, schedule, rank, target modules,
+batch and sequence length, with only the base-weight representation differing —
+gives 0.756694 against 0.756702. That is eight parts in a million, far under
+this evaluation's pre-registered ~0.03 noise floor. Not a duplicated row: 67 of
+87 items score differently and simply average out. **The trade is VRAM against
+wall-clock, not quality** — QLoRA used 54% less VRAM and took 42% longer,
+because NF4 weights are dequantized on every forward and again in backward.
 
-1. **The 3B model is not measurably worse than the 7B one, once both are
-   tuned.** 0.7567 vs 0.7654, with 95% bootstrap CIs overlapping across nearly
-   their whole width — against a pre-registered noise floor of ~0.03 F1. It
-   trains 3.1× faster and answers 1.5× faster.
-2. **Fine-tuning mattered far more than which base model was picked.** The two
-   bases differ by 0.2032 F1; the two tuned arms differ by 0.0087. Llama-3B
-   base answers 43 of the 60 questions it should refuse; after training it
-   refuses all 60 while also losing all 12 of its false refusals.
-3. **`citation_rate` maxes out at 0.5918, not 1.0** — 60 of the 147 items are
-   abstention cases and an abstention cannot cite. 0.5102 means **75 of 87
-   answerable items cited, 86% of what is reachable.**
+**2. The 3B model matches the 7B one once tuned**, at a third of the training
+cost. 0.7567 against 0.7654, intervals overlapping across nearly their whole
+width.
 
-**Arm C (Llama-3.2-3B QLoRA) is rerunning after a VRAM failure.** Its first
-attempt ran 44 of 150 steps, then exceeded 16 GB and degraded to PCIe speed
-instead of raising an error — the Windows/WDDM behaviour
-`docs/hardware_profile.md` warns about. Cause, verified from PEFT's source:
-4-bit preparation upcasts every unquantized parameter to fp32, and on
-Llama-3.2-3B that is the tied 128,256 × 3,072 embedding — 394M parameters,
-1.58 GB in fp32, with fp32 logits on top. **QLoRA needed more VRAM than LoRA
-on the same model**, which is specific to a large vocabulary on a small model.
+**3. Fine-tuning mattered far more than base-model choice.** The two bases
+differ by 0.2032 F1; the three tuned arms differ by 0.0087 across the board.
+Llama-3B base answers 43 of the 60 questions it must refuse; after training all
+three arms refuse all 60 while losing every false refusal.
 
-Keeping that frozen head in bf16 cut steady-state VRAM from **15.92 GB to
-10.57 GB** against arm A's 10.61 GB, at unchanged speed and with the step-25
-eval loss unchanged to 1e-4 — but **it did not fix the failure.** The rerun
-froze at the same step 44, at 16.02 GB. With a fixed seed and dataset order
-that step draws the same batch every time, so the failure is deterministic.
-The remaining difference between arms A and C on that batch is **not yet
-explained**, and `FT-005` records that rather than a guess. Lowering the
-sequence cap is not available — it is already above the longest real example,
-so it would change nothing. The remaining lever is the micro-batch size, which
-would require rerunning arm A too in order to keep the comparison controlled.
+**4. `citation_rate` maxes out at 0.5918, not 1.0** — 60 of the 147 items are
+abstention cases and an abstention cannot cite. 0.5102 means 75 of 87 answerable
+items cited, 86% of what is reachable.
+
+**5. Every arm over-fits.** Validation loss bottoms at step 50 (both Llama arms)
+or step 75 (Mistral) of 150, then rises for the rest of training. The scored
+adapters are the **final** step, because that is what `save_model()` writes.
+Best-checkpoint rows are being scored separately to settle whether one epoch
+beats two.
 
 **So the next thing that matters is still Phase 5.** Retrieval, the base model
 and quantization all claim to be decided "by measurement", and every benchmark

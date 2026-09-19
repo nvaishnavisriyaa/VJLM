@@ -27,11 +27,11 @@ the *results*; the weights are local to this machine. Rebuild them with
 |---|---|---|---|---|
 | `vjlm-qlora-mistral-7b-v0.3/` | B | 3.1 GB | `adapter_model.safetensors`, 161 MB | 25, 50, 75, 100, 125, 150 |
 | `vjlm-lora-llama-3.2-3b/` | A | 1.9 GB | `adapter_model.safetensors`, 93 MB | 25, 50, 75, 100, 125, 150 |
-| `vjlm-qlora-llama-3.2-3b/` | C | 591 MB | **none — never finished** | 25, plus `superseded-fp32head-checkpoint-25/` |
+| `vjlm-qlora-llama-3.2-3b/` | C | ~1.9 GB | `adapter_model.safetensors`, 93 MB | 25, 50, 75, 100, 125, 150 |
 
 The directory is large relative to the adapter because every intermediate
 checkpoint is kept, deliberately: `FT-004` explains that per-epoch saving with
-`save_total_limit=1` would have discarded the evidence that both arms over-fit.
+`save_total_limit=1` would have discarded the evidence that every arm over-fits.
 
 Each completed directory also holds `adapter_config.json`, `run.json` (the full
 training record), the tokenizer files and `chat_template.jinja` — so an adapter
@@ -55,7 +55,7 @@ row, because `main` moves and "we used Mistral-7B" is not a reproducible claim.
 ### Not yet built
 
 No merged fp16 model and no GGUF quantization exist. That is Phase 9
-(`QUANT-001`), blocked until the matrix finishes. `runtime/start_llama.cmd`
+(`QUANT-001`), which the completed matrix now unblocks. `runtime/start_llama.cmd`
 still points at a model path that does not exist on this machine.
 
 ---
@@ -69,7 +69,7 @@ still points at a model path that does not exist on this machine.
 | Vocabulary | 32,768 | 128,256 | 128,256 |
 | Licence | Apache-2.0, ungated | Llama 3.2 Community (custom, gated) | same |
 | Pad token | `<unk>` | `<|finetune_right_pad_id|>` | `<|finetune_right_pad_id|>` |
-| Status | ✅ trained + scored | ✅ trained + scored | ❌ blocked, see `FT-005` |
+| Status | ✅ trained + scored | ✅ trained + scored | ✅ trained + scored |
 
 **The licences differ in a way that matters.** Mistral is Apache-2.0. Llama-3.2
 is gated behind a custom licence with a 700M-MAU clause and a "Built with Llama"
@@ -79,14 +79,15 @@ performs as well as the 7B (§5), the licence may decide this rather than the
 scores. `Qwen2.5-3B-Instruct` (Apache-2.0, ungated) is the drop-in substitute.
 
 **The vocabulary difference is not trivia.** It drives VRAM, because
-cross-entropy materialises `batch × seq × vocab`. It is why the 3B model needed
-*more* VRAM than the 7B one, and why arm C does not fit at all.
+cross-entropy materialises `batch × seq × vocab`. It is why the bf16 3B arm
+peaked at *more* VRAM (10.61 GB) than the 7B one (7.18 GB), and why arm C took
+three attempts to run — see `FT-005`.
 
 ---
 
 ## 3. Which technique
 
-Both completed arms use **LoRA-family adapter tuning** — the base weights are
+All three arms use **LoRA-family adapter tuning** — the base weights are
 frozen and only small low-rank matrices are trained. Nothing does full
 fine-tuning; it would not fit on 16 GB, and it would also be the wrong tool,
 since `DECISIONS.md` assigns *facts* to RAG and only *behaviour* to training.
@@ -143,8 +144,8 @@ second variable. Generation is locked at `temperature=0`,
 Content-hashed and recorded in every run: train `2b34546041463e84`, val
 `62e83f8fee4da45f`, test `54b5bd2aed9ca354`. Identical across all arms.
 
-Nothing was truncated at 1280 tokens in either arm — longest example 1,094
-tokens under the Llama tokenizer, 1,139 under Mistral's.
+Nothing was truncated at 1280 tokens in any arm — longest example 1,094 tokens
+under the Llama tokenizer, 1,139 under Mistral's.
 
 The split is by **document group before augmentation**. An earlier split shared
 32% of its test answers with training, which made every result meaningless; see
@@ -158,19 +159,20 @@ The split is by **document group before augmentation**. An earlier split shared
 questions the model should refuse**. Same items, same seed, same decode
 settings for every row.
 
-| | Mistral-7B base | **Mistral-7B QLoRA** | Llama-3B base | **Llama-3B LoRA** |
-|---|---|---|---|---|
-| run_id | `e38613e2` | `baffeb06` | `b48d1ca6` | `822c92ed` |
-| grounded_f1 | 0.4401 | **0.7654** | 0.2369 | **0.7567** |
-| 95% CI | 0.395–0.486 | **0.719–0.807** | 0.202–0.273 | **0.717–0.796** |
-| abstain_recall | 1.0000 | 1.0000 | 0.2833 | **1.0000** |
-| abstain_precision | 0.8108 | **1.0000** | 0.5862 | **1.0000** |
-| false_abstain | 14 / 87 | **0** | 12 / 87 | **0** |
-| citation_rate | 0.3605 | **0.5102** | 0.0204 | **0.5102** |
-| mean answer tokens | 79 | 35 | 44 | 36 |
-| train minutes | — | 230.6 | — | **74.0** |
-| peak VRAM | — | 7.18 GB | — | 10.61 GB |
-| s / answer (GPU eval) | 22.19 | 20.16 | 5.83 | 13.72 |
+| | Mistral-7B base | **7B QLoRA** | Llama-3B base | **3B LoRA** | **3B QLoRA** |
+|---|---|---|---|---|---|
+| run_id | `e38613e2` | `baffeb06` | `b48d1ca6` | `822c92ed` | `0868f01f` |
+| arm / role | B / base | B / tuned | AC / base | A / tuned | C / tuned |
+| grounded_f1 | 0.4401 | **0.7654** | 0.2369 | **0.7567** | **0.7567** |
+| 95% CI | 0.395–0.486 | 0.719–0.807 | 0.202–0.273 | 0.717–0.796 | 0.712–0.796 |
+| abstain_recall | 1.0000 | 1.0000 | 0.2833 | **1.0000** | **1.0000** |
+| abstain_precision | 0.8108 | **1.0000** | 0.5862 | **1.0000** | **1.0000** |
+| false_abstain | 14 / 87 | **0** | 12 / 87 | **0** | **0** |
+| citation_rate | 0.3605 | 0.5102 | 0.0204 | 0.5102 | 0.5170 |
+| mean answer tokens | 79 | 35 | 44 | 36 | 35 |
+| train minutes | — | 230.6 | — | **74.0** | 105.1 |
+| peak VRAM | — | 7.18 GB | — | 10.61 GB | **4.88 GB** |
+| s / answer (GPU eval) | 22.19 | 20.16 | 5.83 | 13.72 | **13.24** |
 
 All rows: 147 requested, 147 succeeded, 0 failed.
 
@@ -217,31 +219,58 @@ Llama's 128,256 give per-token losses on different scales. `eval_loss` is valid
 
 **3. Both arms over-fit, and neither best checkpoint is what was scored.**
 
-| step | arm A `eval_loss` | arm B `eval_loss` |
-|---|---|---|
-| 25 | 0.3506 | 0.2728 |
-| 50 | **0.3271 — best** | 0.2376 |
-| 75 | 0.3374 | **0.2349 — best** |
-| 100 | 0.3469 | 0.2627 |
-| 125 | 0.3623 | 0.2706 |
-| 150 | 0.3619 | 0.2754 |
+| step | arm A `eval_loss` | arm B `eval_loss` | arm C `eval_loss` |
+|---|---|---|---|
+| 25 | 0.3506 | 0.2728 | 0.3468 |
+| 50 | **0.3271 — best** | 0.2376 | **0.3230 — best** |
+| 75 | 0.3374 | **0.2349 — best** | 0.3405 |
+| 100 | 0.3469 | 0.2627 | 0.3590 |
+| 125 | 0.3623 | 0.2706 | 0.3675 |
+| 150 | 0.3619 | 0.2754 | 0.3683 |
 
-Arm A bottoms at step 50 and arm B at step 75 — both inside 1 epoch of a
-2-epoch budget — then rise for the rest of training. **The scored adapters are
-the step-150 ones in both cases**, because `trainer.save_model()` writes the
+Both Llama arms bottom at step 50 and Mistral at step 75 — all inside 1 epoch
+of a 2-epoch budget — then rise for the rest of training. **The scored adapters are
+the step-150 ones in every case**, because `trainer.save_model()` writes the
 final step. They still beat their baselines decisively, so the conclusions
 above hold, but "does one epoch beat two?" is unanswered and answerable: every
 checkpoint is on disk, and it costs one eval pass per arm with no retraining.
 Open item, not a decision.
 
-### Arm C is missing
+### A↔C — the controlled comparison: LoRA vs QLoRA is a wash on quality
 
-Llama-3.2-3B **QLoRA** never completed, so **LoRA-vs-QLoRA is unmeasured** —
-the one comparison arm C existed to make. It exceeded 16 GB VRAM at step 45,
-twice, and on Windows that degrades to PCIe-speed thrashing rather than raising
-an error. Full account and two failed fixes in `FT-005`.
+Arms A and C differ in exactly one respect: the base weights are bf16 for A and
+4-bit NF4 for C. Data, order, seed, schedule, rank, alpha, dropout, target
+modules, batch, effective batch, sequence length and chat template are all
+identical.
 
-Nothing else in this document depends on arm C.
+| | A — LoRA | C — QLoRA |
+|---|---|---|
+| grounded_f1 | 0.756694 | 0.756702 |
+| false_abstain | 0 | 0 |
+| citation_rate | 0.5102 (75/87) | 0.5170 (76/87) |
+| **peak VRAM** | 10.61 GB | **4.88 GB** — 54% less |
+| **train minutes** | **74.0** | 105.1 — 42% more |
+
+The two means agree to eight parts in a million. That is *not* a duplicated
+row — different `run_id`, and **67 of 87 items score differently**; they happen
+to average to the same place. 75 of 147 predictions are byte-identical, nearly
+all abstentions, which are formulaic by design.
+
+**The trade is VRAM against wall-clock, not quality.** NF4 weights are
+dequantized on every forward and again in backward under gradient checkpointing,
+and that compute costs 42% more time. Quantizing the base cost nothing
+measurable in behaviour here.
+
+Scope: one model, one rank, one dataset, 87 scorable items. This says QLoRA is
+a sound choice *in this setting*. It does not establish that 4-bit training is
+free in general.
+
+**Arm C required an allocator fix to run at all.** It exceeded 16 GB at step 45
+twice before the cause was found: the caching allocator was reserving 13.21 GB
+to serve 6.18 GB of live tensors and never releasing it. The fix is allocator
+configuration — `--alloc-guard` — and changes no hyperparameter, which is why
+arm A did not need rerunning and A↔C stays controlled. Full account, including
+two wrong diagnoses, in `FT-005`.
 
 ---
 

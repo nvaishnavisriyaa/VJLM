@@ -66,7 +66,12 @@ ARMS = [
      # the first attempt past 16 GB at step 45 - see FT-005. Arm A never had
      # that upcast, so removing it here leaves the NF4-vs-bf16 base as the only
      # difference between A and C, which is what the comparison is for.
-     "extra": ["--no-fp32-head"],
+     # --no-fp32-head saves 5.3 GB of the requirement; --alloc-guard is what
+     # actually fixes it, because reserved (13.21 GB) rather than allocated
+     # (6.18 GB) is what overran the card. --vram-cap makes any recurrence a
+     # loud OutOfMemoryError instead of silent WDDM thrashing that looks like a
+     # hang. None of the three changes a hyperparameter. See FT-005.
+     "extra": ["--no-fp32-head", "--alloc-guard", "--vram-cap", "0.92"],
      "base_label": None},          # reuses the arm-A base row
 ]
 
@@ -131,8 +136,13 @@ def train(a):
     if os.path.exists(os.path.join(out, "run.json")):
         log("SKIP  train arm %s - run.json already present" % a["arm"])
         return True
+    # No --resume: it cannot work in this pinned environment. transformers
+    # 4.56.2 gates torch.load behind torch >= 2.6 for CVE-2025-32434, and the
+    # optimizer state is a .pt file, so _load_optimizer_and_scheduler raises
+    # before training starts. Passing it would turn any restart-after-interrupt
+    # into a crash now that checkpoints exist. See the correction in FT-004.
     cmd = [PY, "-u", "training/train_local.py", "--base", a["base"],
-           "--epochs", EPOCHS, "--name", a["name"], "--resume"]
+           "--epochs", EPOCHS, "--name", a["name"]]
     if a["qlora_train"]:
         cmd.append("--qlora")
     cmd += a.get("extra", [])
@@ -157,6 +167,53 @@ def score(a, role):
     else:
         cmd += ["--label", a["base_label"], "--method", "none"]
     return run(cmd, "score arm %s %s" % (arm_label, role))
+
+
+def score_best(a):
+    """Score the lowest-eval_loss checkpoint as its own row.
+
+    trainer.save_model() writes the FINAL step, so the "tuned" row is whatever
+    2 epochs produced - and on every arm measured so far validation loss bottoms
+    out inside epoch 1 and then rises. That makes "tuned" the over-fit side of
+    the curve. The step is read from run.json rather than hardcoded, so this
+    needs no per-arm knowledge and stays correct if an arm is retrained.
+
+    This does NOT settle which adapter to ship. eval_loss is token-level
+    cross-entropy; the Phase 8 metrics are abstention, false-abstain and
+    citation rate. A model can improve on one while regressing on the others,
+    which is exactly why this is measured rather than argued.
+    """
+    out = os.path.join(ADAPTERS, a["name"])
+    rec_path = os.path.join(out, "run.json")
+    if not os.path.exists(rec_path):
+        log("SKIP  score arm %s best - no run.json (arm did not train)" % a["arm"])
+        return True
+    rec = json.load(open(rec_path, encoding="utf-8"))
+    best = rec.get("best_eval") or {}
+    step = best.get("step")
+    if not step:
+        log("SKIP  score arm %s best - no eval curve recorded" % a["arm"])
+        return True
+    if rec.get("final_is_best"):
+        log("SKIP  score arm %s best - final step IS the best (step %s)"
+            % (a["arm"], step))
+        return True
+    ck = os.path.join(out, "checkpoint-%d" % step)
+    if not os.path.isdir(ck):
+        log("SKIP  score arm %s best - %s is not on disk" % (a["arm"], ck))
+        return True
+    if scored(a["arm"], "best"):
+        log("SKIP  score arm %s best - already in generation_results.jsonl" % a["arm"])
+        return True
+    log("arm %s best checkpoint is step %d (eval_loss %s) vs final step %s"
+        % (a["arm"], step, best.get("eval_loss"),
+           rec["eval_curve"][-1]["eval_loss"] if rec.get("eval_curve") else "?"))
+    cmd = [PY, "-u", "evaluation/eval_generation.py", "--backend", "hf",
+           "--base", a["base"], "--revision", a["rev"], "--qlora",
+           "--arm", a["arm"], "--role", "best", "--seed", "42",
+           "--adapter", ck, "--label", a["label"] + "-best",
+           "--method", "qlora" if a["qlora_train"] else "lora"]
+    return run(cmd, "score arm %s best (checkpoint-%d)" % (a["arm"], step))
 
 
 def main():
@@ -187,6 +244,11 @@ def main():
             completed.append("score-tuned-" + arm)
         else:
             failed.append("score-tuned-" + arm)
+
+        if score_best(a):
+            completed.append("score-best-" + arm)
+        else:
+            failed.append("score-best-" + arm)
         set_status(completed=completed, failed=failed)
 
     log("-" * 70)

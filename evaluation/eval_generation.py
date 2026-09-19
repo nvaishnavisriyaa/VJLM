@@ -271,7 +271,7 @@ def compare():
             "%-16s" % ("-" if r.get(k) is None else r.get(k)) for r in order)))
 
     print("\nbase -> tuned deltas, each arm against its OWN base:")
-    tuned = [r for r in by.values() if r.get("role") == "tuned"]
+    tuned = [r for r in by.values() if r.get("role") in ("tuned", "best")]
     bases = {r.get("base_model"): r for r in by.values() if r.get("role") == "base"}
     for r in sorted(tuned, key=lambda x: x.get("arm") or ""):
         b = bases.get(r.get("base_model"))
@@ -304,7 +304,13 @@ def main():
                     help="load the base in 4-bit NF4 (must match the arm)")
     ap.add_argument("--method", default=None, help="none|lora|qlora")
     ap.add_argument("--arm", default=None, help="A|B|C")
-    ap.add_argument("--role", default=None, choices=["base", "tuned"])
+    # "best" is the lowest-eval_loss checkpoint rather than the final step.
+    # Both completed arms bottom out inside epoch 1 and then rise, and
+    # trainer.save_model() writes the FINAL step - so "tuned" is the over-fit
+    # side of the curve. Scoring "best" as its own row makes "does one epoch
+    # beat two" a measurement instead of an argument from eval_loss, which is
+    # token-level cross-entropy and not the behaviour being graded.
+    ap.add_argument("--role", default=None, choices=["base", "tuned", "best"])
     ap.add_argument("--label", default="run")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=42)

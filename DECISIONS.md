@@ -296,9 +296,9 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   | B | tuned | `baffeb06` | **0.7654** (0.7192–0.8073) | **1.000** | **0** | 0.5102 | 230.6 | 20.16 |
   | AC | base | `b48d1ca6` | 0.2369 (0.2023–0.2733) | 0.283 | 12 | 0.0204 | — | 5.83 |
   | A | tuned | `822c92ed` | **0.7567** (0.7166–0.7959) | **1.000** | **0** | 0.5102 | **74.0** | **13.72** |
-  | C | tuned | **failed** | — | — | — | — | — | — |
+  | C | tuned | `0868f01f` | **0.7567** (0.7121–0.7964) | **1.000** | **0** | 0.5170 | 105.1 | **13.24** |
 
-  All *completed* rows are n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items. **Arm C did not train to completion — see `FT-005`.** It is left as `failed`, not quietly dropped, because the A↔C comparison this entry is built around is currently *unmeasured*, and an entry that silently listed four arms would read as though five had been planned.
+  All five rows are n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items. Arm C required an allocator fix to run at all (`FT-005`); the fix changed no hyperparameter, so A↔C remains controlled.
 
 - **`citation_rate` has a structural ceiling of 0.5918, and must never be read as if 1.0 were achievable.** Its denominator is all 147 items, but only 87 are answerable and an abstention cannot cite; 87/147 = 0.5918. Both tuned arms sit at 0.5102 = **75 of 87 answerable items cited, 86% of what is reachable.** The two arms cite 75 items each and agree on 74 of them, which is convergence on the same behaviour, not a copied number. Mistral *base* also attached citations to **10 items it abstained on**; both tuned arms do that zero times.
 
@@ -309,7 +309,25 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   2. **The cost difference is not marginal.** Arm A trained in **74 minutes** against arm B's **230.6**, and generates at **13.72 s/answer** against **20.16** — 3.1× cheaper to train and 1.5× faster to score, for a difference in grounded F1 of 0.0087, which is well inside the ~0.03 noise floor this entry pre-registered. If that survives arm C and Phase 5, the 7B model is paying 3× the training cost for nothing measurable.
   3. **Fine-tuning mattered more than base-model choice.** The gap between the two *bases* is 0.2032 F1; the gap between the two *tuned* arms is 0.0087. Both arms converge on `abstain_recall` 1.000, `false_abstain` 0 and the same 75 cited items. The behaviour being taught is apparently reachable from either starting point — which is exactly the claim the three-way separation rests on, and the first direct evidence for it.
 
-  **What none of this licenses yet:** a selection. These are templated items auto-derived from the corpus (see the scope limit below), and **arm C failed to train**, so LoRA-vs-QLoRA remains unmeasured. The 3B-matches-7B result in (1) stands on its own — it does not depend on arm C — but it is a *(model, method)* result, not a statement about 3B models in general.
+  **What none of this licenses yet:** a selection. These are templated items auto-derived from the corpus — see the scope limit below.
+
+- **A↔C, the controlled comparison this entry was built for: LoRA and QLoRA are behaviourally indistinguishable here.**
+
+  | | A — LoRA (bf16 base) | C — QLoRA (NF4 base) |
+  |---|---|---|
+  | grounded_f1 | 0.756694 | 0.756702 |
+  | abstain_recall / precision | 1.000 / 1.000 | 1.000 / 1.000 |
+  | false_abstain | 0 | 0 |
+  | citation_rate | 0.5102 (75/87) | 0.5170 (76/87) |
+  | **peak VRAM** | 10.61 GB | **4.88 GB** |
+  | **train minutes** | **74.0** | 105.1 |
+  | s / answer | 13.72 | 13.24 |
+
+  The two means agree to **eight parts in a million**, which is closer than this evaluation can resolve — and closer than it looks. It is not a duplicated row: different `run_id`, and **67 of 87 items score differently**; they happen to average to the same place. 75 of 147 predictions are byte-identical, almost all of them abstentions, which are formulaic by design.
+
+  **The trade is VRAM against wall-clock, not quality.** QLoRA used **54% less VRAM** and took **42% longer to train** — NF4 weights must be dequantized on every forward and again in backward under gradient checkpointing, and that compute is not free. Quantizing the base cost nothing measurable in behaviour on this benchmark.
+
+  **Scope:** one model, one rank, one dataset, 87 scorable items. This says QLoRA is a sound choice *here*; it does not establish that 4-bit training is free in general, and a difference below ~0.03 F1 is under this evaluation's pre-registered noise floor either way.
 
 - **Confirmed prediction — VRAM is bound by logits, not weights.** Arm A (3B, bf16) peaked at **10.61 GB** while arm B (7B, NF4) peaked at **7.18 GB**. The smaller model used 48% more VRAM, because Llama-3.2-3B's 128,256-token vocabulary against Mistral-v0.3's 32,768 dominates the cross-entropy tensor. `docs/hardware_profile.md` predicted this before either arm ran.
 
@@ -329,7 +347,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 - **Selected:** three changes, all of which follow from that one number.
   1. **Detached launch.** `training/run_matrix.py` is started through WMI `Win32_Process.Create`, which parents it to `WmiPrvSE` rather than the calling shell, so it sits outside any job object that a session teardown would close. Verified by inspecting `ParentProcessId` after launch.
   2. **`save_steps=25`, not `save_strategy="epoch"`.** Bounds the cost of any kill to ~35 min instead of ~1h45m.
-  3. **`--resume`**, resuming from the newest `checkpoint-*` in the adapter directory, with every matrix stage idempotent — a training stage is complete when `run.json` exists, a scoring stage when its `(arm, role)` row is already in `generation_results.jsonl`. Re-running the driver after any interruption continues rather than restarting.
+  3. **`--resume`** (**broken — see the correction below**), resuming from the newest `checkpoint-*` in the adapter directory, with every matrix stage idempotent — a training stage is complete when `run.json` exists, a scoring stage when its `(arm, role)` row is already in `generation_results.jsonl`. Re-running the driver after any interruption continues rather than restarting.
 - **Why:** The Phase 8 plan explicitly rejected resume logic: *"Skip `--resume`: 225 steps is ~36 min for the longest arm, and `save_strategy="epoch"` + `save_total_limit=1` means restarting is cheaper than the code."* That reasoning was sound **given its premise** and wrong because the premise was an unmeasured estimate. At 9.6 s/step, restarting genuinely is cheaper than the code. At 84 s/step it is not, and the difference is the whole argument.
 
   This is the specific failure mode `experiments/README.md` is built to prevent — a number that was *assumed*, propagated into a design decision, and only surfaced when the decision it justified failed. It cost 48 minutes, which is cheap for the lesson.
@@ -351,12 +369,26 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   - *Windows Scheduled Task* — also fully detaches, and is the fallback if WMI ever proves unreliable. Not chosen because it leaves a registered task to clean up and needs no scheduling semantics here; this is one run, now.
   - *`Start-Process` alone* — does not reliably escape a job object with `KILL_ON_JOB_CLOSE`, which is exactly the failure being fixed.
   - *Keeping the harness-tracked background shell* — simplest, and the thing that failed. Acceptable only with resume in place, and even then it wastes up to `save_steps` of work on every session end.
+- **Correction, 2026-09-19 — `--resume` does not work in this environment, and never did.** Point 3 above is **false as shipped**. Resuming raises before training starts:
+
+  ```
+  ValueError: Due to a serious vulnerability issue in `torch.load`, even with
+  `weights_only=True`, we now require users to upgrade torch to at least v2.6
+  ```
+
+  `transformers` 4.56.2 gates `torch.load` behind torch ≥ 2.6 because of CVE-2025-32434, and the pinned environment is torch **2.5.1+cu121**. Model weights are unaffected — they are safetensors — but the **optimizer state is not**, and `_load_optimizer_and_scheduler` refuses to read `optimizer.pt`. There is no `save_safetensors` equivalent for optimizer state.
+
+  **Why this went unnoticed for three runs:** the flag was passed every time and never exercised. Arm B trained straight through, so its record says `resumed_from_step: null`. Both arm C attempts logged `--resume given but no checkpoint ...; starting fresh`, because the checkpoint had been moved aside deliberately each time. The code path that mattered was only reached on the fourth attempt.
+
+  This is the same failure this entry was written about, one level up. `FT-004` replaced an unmeasured *throughput* estimate with a measured one, and then shipped an unmeasured *recovery* claim in its place. The lesson the entry draws — that a number or behaviour which was never exercised is not evidence — applies to the entry itself. **Checkpoints every 25 steps are still real and still useful; what does not work is continuing from one.**
+
+  Options, none yet chosen: upgrade torch to ≥ 2.6, which changes the pinned environment mid-experiment and would invalidate the comparability of anything trained after it; pin `transformers` to a version without the gate, same objection; or accept that recovery means restarting the arm and cut `save_steps` from the durability argument. The last is the honest default until Phase 8 completes, because changing the training environment between arms is a worse problem than losing a run.
 - **Known cost of detaching:** the run is invisible to the launching session's task tracking, so no completion notification arrives automatically. Progress is exposed through `experiments/matrix.log` and `experiments/matrix_status.json` instead. Note that `matrix_status.json`'s `heartbeat` is written **only at stage boundaries** and is therefore not a liveness signal during a 3.5 h stage — use the log file's modification time.
 - **Revisit trigger:** A training stage drops below ~20 min (a much smaller model, or a much faster card), at which point the original "restarting is cheaper than the code" argument becomes true again. Or the run moves to a machine where a scheduler exists and should own it.
 
 ## FT-005 — Why arm C (Llama-3.2-3B QLoRA) does not fit in 16 GB
 
-- **Status:** **open — still blocking the A↔C comparison.** Two fix attempts have failed. Progress and the two dead ends are recorded at the bottom; do not read the `--no-fp32-head` section as a resolution.
+- **Status:** **resolved 2026-09-19**, on the third attempt. Arm C trained 150/150 and scored (`0868f01f`). The two failed attempts and the invalid probe are kept below, because the wrong diagnoses are the substance of this entry.
 - **Date:** 2026-09-19
 - **What happened:** Arm C trained normally for 44 of 150 steps at ~36 s/step, completed its step-25 evaluation (`eval_loss` 0.3468) and saved `checkpoint-25`. At step 45 it stopped advancing. Thirty minutes later the step counter had not moved, while the GPU sat at **100% utilisation** and **15.92 GB of 16.38 GB VRAM**, and the process burned ~2 CPU cores. It was killed; VRAM immediately fell to 1.28 GB, confirming the training process held all of it.
 - **This is the failure mode `docs/hardware_profile.md` warns about.** Windows/WDDM does not raise `OutOfMemoryError` — CUDA spills into shared host memory and the run degrades to PCIe speed instead of stopping. A step that took 36 s had not completed in 48× that. **A crash-free run is not proof it fitted, and a *hung* run is not proof of a hang.**
@@ -393,6 +425,29 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 - **What is still not explained.** Arm A cleared step 45 on the same data, same order, same seed, at 10.61 GB peak. Arm C fails there even with the head in bf16. The fp32 head accounted for 5.3 GB; **the remaining difference is not yet identified**, and no explanation is recorded here rather than a guessed one. Candidates not yet tested: bitsandbytes' transient dequantization buffers under gradient checkpointing (which recomputes, and therefore dequantizes, a second time in backward), and allocator fragmentation, which `expandable_segments` cannot mitigate on Windows.
 - **Lowering `--max-length` is not available, and this is worth recording so it is not proposed again.** The cap is 1280 but the longest real example is 1094, and padding is dynamic — so the peak is set by the longest *example*, not the cap. Lowering 1280 → 1152 changes nothing at all. Lowering it enough to matter means cutting below 1094, and the comment at `train_local.py:221` already records why that is destructive: one example has a **1111-token prompt**, so a 1024 ceiling truncated its answer away entirely and left an example with no trainable token.
 - **The lever that is left is the micro-batch.** Logits scale with `batch × seq × vocab`, so per-device batch **1 × accum 16** halves the dominant term while holding effective batch at 16. Cost: per-device batch is itself locked, and under gradient accumulation micro-batch size can shift per-token loss weighting — so to keep A↔C controlled, **arm A must be rerun at the same setting**, superseding `822c92ed`. That is ~74 min for A plus ~90 for C. It also widens the gap to arm B, which stays at batch 2, in a C↔B comparison already too loose for strong claims.
+- **Attempt 3 — the actual cause: allocator fragmentation, not memory demand.** Instrumenting per-step `max_memory_allocated` against `max_memory_reserved` settled it in one run:
+
+  | | allocated | reserved |
+  |---|---|---|
+  | steps 8–16, unfixed | 4.9–5.5 GB | 9.17 GB |
+  | **step 17, unfixed** | **6.18 GB** | **13.21 GB** ← ratchet, never released |
+  | **step 45, unfixed** | — | exceeded 16 GB, thrashed |
+
+  **Arm C never needed more than ~6 GB.** The caching allocator was reserving 13.21 GB to serve 6.18 GB of live tensors — 2.14× — and ratcheting upward monotonically. Sequence lengths vary per batch, and bitsandbytes dequantizes NF4 weights into short-lived buffers on every forward *and* again in backward under gradient checkpointing, so cached blocks stop matching the next request. `expandable_segments`, the canonical fix, is **unsupported on Windows** (already tried and rejected, `docs/hardware_profile.md`).
+
+  This also retired the "gradient checkpointing is silently inert" hypothesis: if it were, *allocated* would have been huge. Allocated was **below arm A's** 10.61 GB throughout.
+- **Fix: `--alloc-guard`** — `PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.7,max_split_size_mb:256` set before torch initialises CUDA, plus `empty_cache()` each step. Measured across the crossing that killed both earlier attempts:
+
+  | step | allocated | reserved |
+  |---|---|---|
+  | 44 | 4.96 GB | 10.96 GB |
+  | **45** | **6.33 GB** ← heaviest batch in the run | **10.75 GB** |
+  | 46 | 5.43 GB | 10.65 GB |
+
+  Step 45 is visibly the largest batch — allocated peaks there, ~1.3 GB above its neighbours, exactly as a fixed seed predicts. Reserved did not react at all; it was *lower* than step 44's. Reserved then held in a 10.5–11.0 GB band for all 150 steps instead of climbing. Final peak allocated: **4.88 GB**, the lowest of any arm.
+
+  **This is why arm A did not have to be rerun.** The fix is allocator configuration — it changes no hyperparameter and no arithmetic, so every value `SLM-001` locks for A↔C is untouched. The alternative under consideration, per-device batch 1 × accum 16, would have cost a ~3 h rerun of arm A *and* weakened the comparison. The 26-minute diagnostic bought both back.
+- **`--vram-cap` is kept on for arm C**, so any recurrence raises `OutOfMemoryError` at a known ceiling instead of silently thrashing. On this platform that is the difference between a diagnosis and a hang.
 - **Remaining cost, stated:** arm C's recipe now differs from arm B's, which kept the fp32 head harmlessly on a 32k vocab. `C↔B` was already the loose comparison — different family, tokenizer, vocabulary and pretraining — so this adds one more item to a list that already forbids strong claims. Trading precision in the loose comparison to gain it in the tight one is the right direction, but it is a trade, not a free fix.
 - **Revisit trigger:** a card with more than 16 GB, or a decision from the above list. Whichever comes first.
 - **What survives regardless:** arm C's failure does not touch arms A and B. The finding that tuned Llama-3.2-3B matches tuned Mistral-7B on this evaluation rests on `822c92ed` and `baffeb06`, both complete and both scored on all 147 items.

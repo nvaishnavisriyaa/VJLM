@@ -54,13 +54,13 @@ The project's central claim is **evidence-based engineering**: no component is c
 | **2b. Knowledge base — BM25** | ✅ Working | Rebuilds in **0.8 s**. Recall@5 0.911, MRR 0.803, p50 4.0 ms on the auto-derived benchmark |
 | **2b. Knowledge base — dense/hybrid** | ✅ **Now built** | 13,051 × 384. **22 chunks/sec** with `threads=cpu_count` (the 3/sec figure was the unconfigured default), ~10 min for a full build, resumable. Vectors cached by text hash, so a refresh embeds only what changed |
 | **2a. Fine-tuning dataset** | ✅ Working | 1,199 / 147 / 147. Split is by document group *before* augmentation — the previous split shared 32% of its test answers with train, making any fine-tune result unmeasurable |
-| **2a. Fine-tune** | ✅ **Two arms trained and scored** | Mistral-7B QLoRA **0.4401 → 0.7654**; Llama-3.2-3B LoRA **0.2369 → 0.7567**. Both reach abstain_recall 1.000 and false_abstain 0. The 3B arm trains 3.1× faster for no measurable loss — see §2.1 |
+| **2a. Fine-tune** | ✅ **All three arms trained and scored** | Mistral-7B QLoRA **0.4401 → 0.7654**; Llama-3.2-3B LoRA and QLoRA both **0.2369 → 0.7567**. All reach abstain_recall 1.000 and false_abstain 0. LoRA vs QLoRA is a wash on quality; QLoRA trades 42% more wall-clock for 54% less VRAM — see §2.1 |
 | **2a. Quantization (ours)** | ❌ Blocked on the fine-tune matrix completing | Script is written and wired |
 | **3. Inference — RBAC + prompt + citations** | ✅ Working | Filters before ranking, role boosts, citations rendered |
 | **3. Inference — authentication** | ⚠️ Role simulation only | The RBAC gate it feeds is real, but in Phase 1 every role sees the same public data, so it filters nothing in practice |
 | **4. Local infra — CPU serving** | ✅ Working | 19.4 tok/s, full answer in **8.75 s** |
 | **Scheduler (self-maintaining)** | ✅ **Now wired** | Not Task Scheduler — `ingestion/refresh.py` runs when the app starts. Per-source intervals; a cycle with nothing due costs **0.08 s** |
-| **Benchmark-driven model comparison** | ⚠️ **4 of 5 scored** | Arm C blocked on VRAM (`FT-005`), so LoRA-vs-QLoRA is unmeasured. Driver is `training/run_matrix.py`; plan in [`experiments/PLAN.md`](experiments/PLAN.md) |
+| **Benchmark-driven model comparison** | ✅ **5 of 5 scored** | LoRA vs QLoRA measured and indistinguishable. Driver is `training/run_matrix.py`; plan in [`experiments/PLAN.md`](experiments/PLAN.md) |
 | **Phase 5 human benchmark** | ❌ **Not started — now the blocker** | `evaluation/questions.jsonl` and `gold_sources.jsonl` are empty files |
 
 **In one line: the data pipeline is complete and automatic, RAG has both
@@ -79,7 +79,7 @@ C rather than being run twice as if it were two experiments.
 | **B** | Mistral-7B-Instruct-v0.3 | QLoRA r=16 | ✅ trained + scored — `baffeb06` |
 | **A** | Llama-3.2-3B-Instruct | LoRA r=16 (bf16 base) | ✅ trained + scored — `822c92ed` |
 | **AC** | Llama-3.2-3B-Instruct | *none* — shared baseline | ✅ scored once — `b48d1ca6` |
-| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | ❌ **blocked** — exceeds 16 GB at step 45, twice; see `FT-005` |
+| **C** | Llama-3.2-3B-Instruct | QLoRA r=16 | ✅ trained + scored — `0868f01f` (needed the `FT-005` allocator fix) |
 
 What each comparison is allowed to claim:
 
