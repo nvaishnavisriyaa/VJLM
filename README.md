@@ -90,7 +90,7 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 5 benchmark | **Not started.** `evaluation/questions.jsonl` and `gold_sources.jsonl` are still empty. Still the blocking item for *selection* |
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
-| 8 fine-tuning | **Arms A and B done; arm C blocked.** Both baselines scored. Arm C exceeds 16 GB VRAM — see `FT-005` |
+| 8 fine-tuning | **Arms A and B done; arm C rerunning.** Both baselines scored. Arm C's VRAM blocker is fixed — see `FT-005` |
 | 9 quantization | Blocked on Phase 8 |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
@@ -124,16 +124,20 @@ Three things stand out:
    abstention cases and an abstention cannot cite. 0.5102 means **75 of 87
    answerable items cited, 86% of what is reachable.**
 
-**Arm C (Llama-3.2-3B QLoRA) failed to train** and LoRA-vs-QLoRA is therefore
-unmeasured. It ran 44 of 150 steps, then exceeded 16 GB VRAM and degraded to
-PCIe speed instead of raising an error — the Windows/WDDM behaviour
-`docs/hardware_profile.md` warns about. Cause, verified from source: PEFT's
+**Arm C (Llama-3.2-3B QLoRA) is rerunning after a VRAM failure.** Its first
+attempt ran 44 of 150 steps, then exceeded 16 GB and degraded to PCIe speed
+instead of raising an error — the Windows/WDDM behaviour
+`docs/hardware_profile.md` warns about. Cause, verified from PEFT's source:
 4-bit preparation upcasts every unquantized parameter to fp32, and on
 Llama-3.2-3B that is the tied 128,256 × 3,072 embedding — 394M parameters,
 1.58 GB in fp32, with fp32 logits on top. **QLoRA needed more VRAM than LoRA
 on the same model**, which is specific to a large vocabulary on a small model.
-Every available fix changes a hyperparameter that `SLM-001` deliberately
-locked, so none has been applied. See `FT-005`.
+
+The fix keeps that frozen head in bf16, which is what the LoRA arm already
+did — so it removes an uncontrolled difference between A and C rather than
+introducing one. Steady-state VRAM went **15.92 GB (thrashing) → 10.57 GB**,
+against arm A's 10.61 GB, at unchanged speed. Restarted from step 0 rather
+than resumed, so the whole run uses one configuration. See `FT-005`.
 
 **So the next thing that matters is still Phase 5.** Retrieval, the base model
 and quantization all claim to be decided "by measurement", and every benchmark

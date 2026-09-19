@@ -61,6 +61,12 @@ ARMS = [
      "base_label": "llama3b-base-nf4", "base_arm": "AC"},
     {"arm": "C", "base": LLAMA, "rev": LLAMA_REV, "qlora_train": True,
      "name": "vjlm-qlora-llama-3.2-3b", "label": "llama3b-qlora",
+     # --no-fp32-head is why this arm can run at all. PEFT's 4-bit preparation
+     # upcasts the frozen 128,256 x 3,072 tied embedding to fp32, which pushed
+     # the first attempt past 16 GB at step 45 - see FT-005. Arm A never had
+     # that upcast, so removing it here leaves the NF4-vs-bf16 base as the only
+     # difference between A and C, which is what the comparison is for.
+     "extra": ["--no-fp32-head"],
      "base_label": None},          # reuses the arm-A base row
 ]
 
@@ -129,6 +135,7 @@ def train(a):
            "--epochs", EPOCHS, "--name", a["name"], "--resume"]
     if a["qlora_train"]:
         cmd.append("--qlora")
+    cmd += a.get("extra", [])
     return run(cmd, "train arm %s (%s)" % (a["arm"], a["name"]))
 
 

@@ -197,6 +197,19 @@ def main():
     ap.add_argument("--base", default=DEFAULT_BASE)
     ap.add_argument("--qlora", action="store_true",
                     help="4-bit NF4 base (QLoRA) instead of a bf16/fp16 base (LoRA)")
+    # QLoRA only. prepare_model_for_kbit_training upcasts every non-Params4bit
+    # parameter to fp32, and bitsandbytes leaves lm_head unquantized, so on a
+    # large-vocabulary model the frozen output embedding lands in fp32 along
+    # with the logits it produces. On Llama-3.2-3B that is 394M params (1.58 GB
+    # in fp32) plus 1.31 GB of fp32 logits at batch 2 x 1280 - enough to push
+    # arm C past 16 GB while plain LoRA on the same model peaked at 10.61 GB.
+    # Off by default so arms A and B stay reproducible from this file. See
+    # FT-005: the head is frozen here (LoRA targets q,k,v,o,gate,up,down), so
+    # nothing is optimized in fp32 through it, and keeping it bf16 matches what
+    # the LoRA arm already does - which makes A<->C more controlled, not less.
+    ap.add_argument("--no-fp32-head", action="store_true",
+                    help="QLoRA: keep the tied embedding/lm_head in the compute "
+                         "dtype instead of letting PEFT upcast it to fp32")
     # 2, chosen from measurement rather than taste. 1 epoch is 75 optimizer
     # steps at effective batch 16, with only 2 warmup steps - likely too few to
     # move the model, which would produce a false negative across every arm at
@@ -306,6 +319,23 @@ def main():
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=True,
             gradient_checkpointing_kwargs={"use_reentrant": False})
+        if a.no_fp32_head:
+            # Undo the upcast for the output embedding only. Layernorms stay
+            # fp32 - they are a few thousand floats each and they are the
+            # actual numerical-stability reason the upcast exists.
+            emb = model.get_input_embeddings()
+            if emb is not None and emb.weight.dtype == torch.float32:
+                emb.weight.data = emb.weight.data.to(dtype)
+            # Reassigning .data breaks weight tying, because it binds a NEW
+            # tensor. Re-tie before touching the output side, or Llama-3.2's
+            # tied head silently keeps its own fp32 copy and the fix does
+            # nothing while costing an extra 1.58 GB.
+            model.tie_weights()
+            out = model.get_output_embeddings()
+            if out is not None and out.weight.dtype == torch.float32:
+                out.weight.data = out.weight.data.to(dtype)
+            tied = out is not None and emb is not None                 and out.weight.data_ptr() == emb.weight.data_ptr()
+            print("  fp32 head upcast reverted to %s (tied=%s)" % (dtype, tied))
     # No paged_adamw_8bit: adapter Adam state is a fraction of a GB so the
     # saving is noise, and bnb's paged optimizers need CUDA unified memory,
     # which Windows does not support.
@@ -387,6 +417,7 @@ def main():
         "batch": a.batch, "accum": a.accum, "effective_batch": a.batch * a.accum,
         "lr": a.lr, "max_length": a.max_length, "seed": a.seed,
         "precision": "bf16" if bf16 else "fp16",
+        "fp32_head": bool(a.qlora and not a.no_fp32_head),
         "pad_token": tok.pad_token, "pad_source": how,
         "chat_template_variant": tr_stats["variant"],
         "add_special_tokens": False,

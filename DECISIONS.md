@@ -294,8 +294,8 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   |---|---|---|---|---|---|---|---|---|
   | B | base | `e38613e2` | 0.4401 (0.3952–0.4857) | **1.000** | 14 | 0.3605 | — | 22.19 |
   | B | tuned | `baffeb06` | **0.7654** (0.7192–0.8073) | **1.000** | **0** | 0.5102 | 230.6 | 20.16 |
-  | AC | base | `822c92ed` | 0.2369 (0.2023–0.2733) | 0.283 | 12 | 0.0204 | — | 5.83 |
-  | A | tuned | `b48d1ca6` | **0.7567** (0.7166–0.7959) | **1.000** | **0** | 0.5102 | **74.0** | **13.72** |
+  | AC | base | `b48d1ca6` | 0.2369 (0.2023–0.2733) | 0.283 | 12 | 0.0204 | — | 5.83 |
+  | A | tuned | `822c92ed` | **0.7567** (0.7166–0.7959) | **1.000** | **0** | 0.5102 | **74.0** | **13.72** |
   | C | tuned | **failed** | — | — | — | — | — | — |
 
   All *completed* rows are n=147 requested, 147 ok, 0 failed. `grounded_f1` CIs are bootstrap 95% over the 87 answerable items. **Arm C did not train to completion — see `FT-005`.** It is left as `failed`, not quietly dropped, because the A↔C comparison this entry is built around is currently *unmeasured*, and an entry that silently listed four arms would read as though five had been planned.
@@ -356,7 +356,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 
 ## FT-005 — Why arm C (Llama-3.2-3B QLoRA) does not fit in 16 GB
 
-- **Status:** **open — blocking the A↔C comparison.** Recorded as a failure, not resolved.
+- **Status:** **resolved 2026-09-19.** Recorded first as an unresolved failure; the fix and the measurement that confirmed it are at the bottom of this entry.
 - **Date:** 2026-09-19
 - **What happened:** Arm C trained normally for 44 of 150 steps at ~36 s/step, completed its step-25 evaluation (`eval_loss` 0.3468) and saved `checkpoint-25`. At step 45 it stopped advancing. Thirty minutes later the step counter had not moved, while the GPU sat at **100% utilisation** and **15.92 GB of 16.38 GB VRAM**, and the process burned ~2 CPU cores. It was killed; VRAM immediately fell to 1.28 GB, confirming the training process held all of it.
 - **This is the failure mode `docs/hardware_profile.md` warns about.** Windows/WDDM does not raise `OutOfMemoryError` — CUDA spills into shared host memory and the run degrades to PCIe speed instead of stopping. A step that took 36 s had not completed in 48× that. **A crash-free run is not proof it fitted, and a *hung* run is not proof of a hang.**
@@ -375,5 +375,18 @@ One judgement in it did survive contact and is worth keeping: **training precisi
   - *Per-device batch 1 × accum 16* — holds effective batch at 16, but per-device batch is itself locked, and micro-batch size changes token-vs-sequence loss weighting under accumulation, so it is not a no-op.
   - *Rerun **both** A and C at settings that fit* — the only option that keeps A↔C strictly controlled. Costs ~74 min plus arm C's full run.
   - *Accept that the comparison cannot be made on this hardware* and report A↔C as not measured. Honest, and cheapest, but leaves `FT-001`'s central question open.
+- **Resolved 2026-09-19 — `--no-fp32-head`, and the reasoning that changed.** The first option above was initially written off as "weakens C↔B". That undersold it. The fp32 upcast is not part of what A↔C compares — **arm A never had it**, because plain LoRA does not call `prepare_model_for_kbit_training`. It was a *second*, uncontrolled difference that PEFT introduced silently. Removing it for arm C leaves NF4-vs-bf16 base weights as the only difference between A and C, which is exactly what the comparison exists to isolate. **The fix makes A↔C more controlled, not less.** It is also defensible on its own terms: the upcast is there for numerical stability of *trainable* parameters and layernorms, and the head is frozen here — LoRA targets `q,k,v,o,gate,up,down` — so nothing is optimized in fp32 through it. Layernorms are left in fp32.
+
+  Implemented as an explicit opt-in flag, off by default, so arms A and B stay reproducible from the committed file. Measured effect:
+
+  | | first attempt | with `--no-fp32-head` | arm A, for reference |
+  |---|---|---|---|
+  | steady-state VRAM | **15.92 GB → thrash** | **10.57 GB** | 10.61 GB |
+  | s / step | 36 → ∞ at step 45 | ~35 | ~29 |
+
+  Arm C now sits within 0.04 GB of arm A, which is the strongest available confirmation that the frozen fp32 head was the entire difference. Speed is unchanged, so the upcast bought nothing.
+
+  **Restarted from step 0, not resumed from `checkpoint-25`.** Those 25 steps were trained *with* the fp32 head; resuming would have made arm C a hybrid of two configurations and put a permanent caveat on A↔C, to save 15 minutes of an 87-minute run. The superseded checkpoint is kept as `superseded-fp32head-checkpoint-25/` rather than deleted.
+- **Remaining cost, stated:** arm C's recipe now differs from arm B's, which kept the fp32 head harmlessly on a 32k vocab. `C↔B` was already the loose comparison — different family, tokenizer, vocabulary and pretraining — so this adds one more item to a list that already forbids strong claims. Trading precision in the loose comparison to gain it in the tight one is the right direction, but it is a trade, not a free fix.
 - **Revisit trigger:** a card with more than 16 GB, or a decision from the above list. Whichever comes first.
-- **What survives regardless:** arm C's failure does not touch arms A and B. The finding that tuned Llama-3.2-3B matches tuned Mistral-7B on this evaluation rests on `b48d1ca6` and `baffeb06`, both complete and both scored on all 147 items.
+- **What survives regardless:** arm C's failure does not touch arms A and B. The finding that tuned Llama-3.2-3B matches tuned Mistral-7B on this evaluation rests on `822c92ed` and `baffeb06`, both complete and both scored on all 147 items.
