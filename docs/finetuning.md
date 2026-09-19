@@ -229,12 +229,35 @@ Llama's 128,256 give per-token losses on different scales. `eval_loss` is valid
 | 150 | 0.3619 | 0.2754 | 0.3683 |
 
 Both Llama arms bottom at step 50 and Mistral at step 75 — all inside 1 epoch
-of a 2-epoch budget — then rise for the rest of training. **The scored adapters are
-the step-150 ones in every case**, because `trainer.save_model()` writes the
-final step. They still beat their baselines decisively, so the conclusions
-above hold, but "does one epoch beat two?" is unanswered and answerable: every
-checkpoint is on disk, and it costs one eval pass per arm with no retraining.
-Open item, not a decision.
+of a 2-epoch budget — then rise for the rest of training. **The scored adapters
+are the step-150 ones in every case**, because `trainer.save_model()` writes the
+final step.
+
+#### Measured: the lowest-loss checkpoint is *not* the better model
+
+Rather than assume the validation curve was right, each arm's best checkpoint is
+being scored as its own `--role best` row. Arm B is in:
+
+| arm B | grounded_f1 | 95% CI | citation_rate | false_abstain | mean tokens |
+|---|---|---|---|---|---|
+| `tuned` — step 150, `eval_loss` 0.2754 | **0.7654** | 0.719–0.807 | **0.5102** | 0 | 35 |
+| `best` — step 75, `eval_loss` 0.2349 | 0.7389 | 0.694–0.781 | 0.4966 | 0 | 36 |
+
+**The checkpoint with 15% lower validation loss scored 0.0265 lower on grounded
+F1.** That gap is just inside the pre-registered ~0.03 noise floor, so the
+honest reading is *no measurable improvement* rather than *measurably worse* —
+but it is decisively **not the improvement the loss curve implied.** Abstention
+is unaffected: both hold `abstain_recall` 1.000 and `false_abstain` 0.
+
+This is the concrete version of the warning two sections up. `eval_loss` is
+token-level cross-entropy over the reference answer; grounded F1, abstention and
+citation rate are what VJLM is graded on. The second epoch raised cross-entropy
+and did not damage — and may have slightly helped — the behaviour that matters.
+**"Over-fitting" measured on the wrong quantity is not over-fitting.**
+
+Arms A and C are still being scored. Until they land, the defensible position is
+that there is **no evidence for preferring the best-loss checkpoint**, and the
+step-150 adapters remain the ones with published numbers.
 
 ### A↔C — the controlled comparison: LoRA vs QLoRA is a wash on quality
 
