@@ -33,8 +33,12 @@ adapter + base model  ->  merged bf16  ->  BF16 GGUF  ->  quantized GGUF
 
 Given an adapter you can rebuild every GGUF in about an hour. Given only a
 GGUF you **cannot** recover the adapter — the delta is merged in and then
-quantized away. That asymmetry is why the adapters were published and the
-23 GB of GGUFs were not.
+quantized away. That asymmetry is why the adapters live on GitHub while the
+23 GB of GGUF builds do not fit there.
+
+**The two selected compressed builds (Llama Q6_K-imat, Mistral Q5_K_M) are
+published on Hugging Face, under Vaishnavi Sriyaa's account** — download them
+directly instead of rebuilding if you just need to serve, not reproduce.
 
 ### What a `git clone` gives you
 
@@ -48,7 +52,8 @@ git lfs pull          # 362 MB of adapter weights - without this you get pointer
 | All code, docs, decision log, experiment results | yes |
 | The 3 fine-tuned adapters (`models/`, 362 MB, LFS) | **yes** |
 | Training data, RAG chunks, evaluation splits | yes |
-| GGUF builds (23 GB) | no — rebuild, ~1 h |
+| GGUF builds (23 GB, all 12 candidates) | no — rebuild, ~1 h |
+| The 2 selected GGUF builds (7.25 GB) | no — on Hugging Face instead |
 | Hugging Face base-model cache (23 GB) | no — re-download |
 | llama.cpp binaries (1.2 GB) | no — re-download |
 | `.venv310` (446 MB) | no — recreate |

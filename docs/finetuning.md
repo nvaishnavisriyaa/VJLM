@@ -88,6 +88,11 @@ Built with llama.cpp pinned at **b11050 / `60b06ab9a`**. Full ladder, the
 rejected builds, the imatrix A/B and the pre-registered gates are in
 `QUANT-001`.
 
+**Both compressed builds are published on Hugging Face, under Vaishnavi
+Sriyaa's account** — not in this repo. GitHub holds the adapters above plus
+every script needed to reproduce the GGUFs (`HANDOFF.md` §0); the 7.25 GB of
+quantized weights live on HF instead.
+
 `runtime/start_llama.cmd` serves a build from `quantization/builds/gguf/`;
 GGUFs are git-ignored and rebuilt locally via `quantization/run_quant_matrix.py`.
 

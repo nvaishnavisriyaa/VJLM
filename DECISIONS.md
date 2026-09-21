@@ -455,6 +455,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 ## QUANT-001 — Which GGUF build ships for CPU inference
 
 - **Status:** **decided for both models.** Llama-3.2-3B → Q6_K + imatrix (2.462 GB). Mistral-7B-v0.3 → Q5_K_M (4.783 GB). The two needed different compression; see below.
+- **Distribution:** both selected GGUF builds are published on Hugging Face, under Vaishnavi Sriyaa's account. GitHub carries the adapters they were built from plus every script and result needed to reproduce them (`HANDOFF.md` §0), not the 7.25 GB of quantized weights themselves.
 - **Date:** 2026-09-21
 - **Requirements:** 100% local CPU inference, no external API. Smallest build whose quality is *measurably* unchanged from full precision. Quality first, then size, then speed.
 - **Tooling:** llama.cpp pinned at **b11050 / commit `60b06ab9a`** (`runtime/llama/PINNED_TAG.txt`). CPU build for every deployment number; CUDA build only at build time for the importance matrix and reference logits, never for a reported throughput figure.

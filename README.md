@@ -154,6 +154,10 @@ beats two.
 | **Quantization error** | **KLD 0.0097**, grounded F1 **+0.0000** | **KLD 0.0077**, grounded F1 **+0.0048** |
 | **CPU speed** | **14.70 tok/s** (~2.4 s/answer) | 8.07 tok/s (~4.3 s/answer) |
 
+**Both compressed GGUF builds are published on Hugging Face, under Vaishnavi
+Sriyaa's account** — GitHub carries the adapters and every script/result that
+reproduces them, not the 7.25 GB of quantized weights themselves.
+
 A third adapter, `models/vjlm-llama3b-qlora/` (arm C), is published because it
 is what makes the LoRA-vs-QLoRA comparison reproducible, not because it ships.
 
