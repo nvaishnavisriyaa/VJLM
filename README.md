@@ -93,7 +93,7 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
 | 8 fine-tuning | **All 5 configurations scored.** LoRA vs QLoRA measured; best-checkpoint rows pending |
-| 9 quantization | **Llama decided: Q6_K + imatrix, 2.43x smaller, no measurable loss.** Mistral in progress — `QUANT-001` |
+| 9 quantization | **Done.** Llama → Q6_K+imatrix (2.46 GB); Mistral → Q5_K_M (4.78 GB). No measurable quality loss on either — `QUANT-001` |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
 
@@ -149,9 +149,10 @@ beats two.
 | **Fine-tuning** | LoRA r=16, bf16 base (arm A) | QLoRA r=16, 4-bit NF4 base (arm B) |
 | **Adapter** | 97 MB, `models/vjlm-llama3b-lora/` | 168 MB, `models/vjlm-mistral7b-qlora/` |
 | **grounded_f1** | 0.7567 | 0.7654 |
-| **Compression** | **GGUF Q6_K + VJLM imatrix** | *in progress* |
-| **Deployed size** | **2.46 GB**, 2.43x smaller than bf16 | — |
-| **Quantization error** | **KLD 0.0097**, grounded F1 **+0.0000** | — |
+| **Compression** | **GGUF Q6_K + VJLM imatrix** | **GGUF Q5_K_M** |
+| **Deployed size** | **2.46 GB**, 2.43x smaller | **4.78 GB**, 2.82x smaller |
+| **Quantization error** | **KLD 0.0097**, grounded F1 **+0.0000** | **KLD 0.0077**, grounded F1 **+0.0048** |
+| **CPU speed** | **14.70 tok/s** (~2.4 s/answer) | 8.07 tok/s (~4.3 s/answer) |
 
 A third adapter, `models/vjlm-llama3b-qlora/` (arm C), is published because it
 is what makes the LoRA-vs-QLoRA comparison reproducible, not because it ships.

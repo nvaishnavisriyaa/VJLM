@@ -122,5 +122,39 @@
   "source": "vjlm-llama3b-BF16.gguf",
   "merged_from": "vjlm-lora-llama-3.2-3b-bf16",
   "ts": "2026-09-19 18:12"
+ },
+ {
+  "name": "vjlm-mistral7b",
+  "label": "Q5_K_M",
+  "quant_type": "q5_k_m",
+  "file": "vjlm-mistral7b-Q5_K_M.gguf",
+  "size_bytes": 5136178848,
+  "size_gb": 4.783,
+  "imatrix": false,
+  "extra_flags": [],
+  "role": "required",
+  "build_seconds": 28.5,
+  "llama_cpp_tag": "b11050",
+  "llama_cpp_commit": "60b06ab9a",
+  "source": "vjlm-mistral7b-BF16.gguf",
+  "merged_from": "vjlm-qlora-mistral-7b-v0.3-bf16",
+  "ts": "2026-09-21 11:31"
+ },
+ {
+  "name": "vjlm-mistral7b",
+  "label": "Q4_K_M",
+  "quant_type": "q4_k_m",
+  "file": "vjlm-mistral7b-Q4_K_M.gguf",
+  "size_bytes": 4372815520,
+  "size_gb": 4.073,
+  "imatrix": false,
+  "extra_flags": [],
+  "role": "curve point - not a candidate unless it passes every gate",
+  "build_seconds": 29.3,
+  "llama_cpp_tag": "b11050",
+  "llama_cpp_commit": "60b06ab9a",
+  "source": "vjlm-mistral7b-BF16.gguf",
+  "merged_from": "vjlm-qlora-mistral-7b-v0.3-bf16",
+  "ts": "2026-09-21 11:32"
  }
 ]

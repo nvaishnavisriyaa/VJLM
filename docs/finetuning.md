@@ -73,7 +73,7 @@ recovered, because the delta is merged in and then quantized away.
 | model | base | fine-tuning | compression | size | error vs full precision |
 |---|---|---|---|---|---|
 | **VJLM-Llama-3B** | `meta-llama/Llama-3.2-3B-Instruct` @ `0cb88a4f` | LoRA r=16 (arm A) | **GGUF Q6_K + VJLM imatrix** | **2.46 GB** (from 5.99, **2.43x**) | **KLD 0.0097**, grounded F1 **+0.0000** |
-| **VJLM-Mistral-7B** | `mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708` | QLoRA r=16 (arm B) | *in progress* | — | — |
+| **VJLM-Mistral-7B** | `mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708` | QLoRA r=16 (arm B) | **GGUF Q5_K_M** | **4.78 GB** (from 13.5, **2.82x**) | **KLD 0.0077**, grounded F1 **+0.0048** |
 
 Measured end to end, with each error isolated rather than summed:
 

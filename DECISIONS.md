@@ -454,7 +454,7 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 
 ## QUANT-001 — Which GGUF build ships for CPU inference
 
-- **Status:** **Llama-3.2-3B decided. Mistral-7B in progress** — its section is deliberately empty rather than predicted.
+- **Status:** **decided for both models.** Llama-3.2-3B → Q6_K + imatrix (2.462 GB). Mistral-7B-v0.3 → Q5_K_M (4.783 GB). The two needed different compression; see below.
 - **Date:** 2026-09-21
 - **Requirements:** 100% local CPU inference, no external API. Smallest build whose quality is *measurably* unchanged from full precision. Quality first, then size, then speed.
 - **Tooling:** llama.cpp pinned at **b11050 / commit `60b06ab9a`** (`runtime/llama/PINNED_TAG.txt`). CPU build for every deployment number; CUDA build only at build time for the importance matrix and reference logits, never for a reported throughput figure.
@@ -524,11 +524,64 @@ Corpus: 518k tokens, 61% sampled `rag_chunks.jsonl` + 39% `train.jsonl` rendered
 - **`Q5_K_M-embd8`** (`--token-embedding-type q8_0 --output-tensor-type q8_0`) — the hypothesis that Llama's 128,256-token vocabulary makes embedding/output tensors worth protecting. **Tested and rejected:** 5.3% better KLD for 4% more size, and still nowhere near the gate. Real effect, not a useful one.
 - **Q4_K_M** — fails on both instruments, and is the only build to break abstention.
 
-### Mistral-7B-Instruct-v0.3 — in progress
+### Mistral-7B-Instruct-v0.3 — results
 
-Lineage: **`mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708`** → **QLoRA r=16, NF4 base** (arm B, final step 150, `baffeb06`) → merged bf16 → *GGUF build pending*.
+Lineage: **`mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708`** → **QLoRA r=16, NF4 base** (arm B, final step 150, `baffeb06`) → merged bf16 → **GGUF Q5_K_M**.
 
-Deliberately left empty. Llama's ladder is not evidence for Mistral's: the vocabularies differ by 4× (32,768 vs 128,256), which changes how much of the model the embedding and output tensors represent and therefore how quantization damage distributes.
+| build | GB | mean KLD | gate |
+|---|---|---|---|
+| BF16 (L1 reference) | 13.5 | — | — |
+| Q8_0 | 7.174 | 0.000550 | pass |
+| Q6_K | 5.539 | 0.003090 | pass |
+| **Q5_K_M** | **4.783** | **0.007710** | **pass — SELECTED** |
+| Q4_K_M | 4.073 | 0.021360 | fail, 2.1× over |
+
+Behavioural gate on the selected build, against its own BF16 reference:
+
+| metric | BF16 ref | Q5_K_M | delta |
+|---|---|---|---|
+| grounded_f1 | 0.7678 | **0.7726** | +0.0048 |
+| citation_rate | 0.5102 | 0.5102 | ±0.0000 |
+| abstain_recall | **1.0000** | **1.0000** | ±0.0000 |
+| abstain_precision | 1.0000 | 1.0000 | ±0.0000 |
+| false_abstain | 0 | 0 | — |
+
+- **Selected: `Q5_K_M`, 4.783 GB — 2.82× compression.** Smallest build clearing the KLD gate, and it holds *perfect* abstention: it never answers a question it should refuse.
+- **Q4_K_M tested and rejected** at 0.021360, per the standing instruction that Q4 ships only on proof.
+
+### The two models needed different compression, and that is the point
+
+| | Llama-3.2-3B | Mistral-7B-v0.3 |
+|---|---|---|
+| vocabulary | 128,256 | 32,768 |
+| Q5_K_M KLD | 0.023813 — **fails** | **0.007710 — passes** |
+| Q6_K KLD | 0.010682 — fails | 0.003090 — passes |
+| selected | **Q6_K + imatrix** | **Q5_K_M** |
+
+**Mistral tolerates the same quant type 3.1× better.** With a vocabulary a quarter the size, the embedding and output tensors are a far smaller share of the model, so quantization damage spreads thinner. Llama needed a higher precision *and* an importance matrix to clear the gate that Mistral cleared two rungs lower.
+
+Had Llama's answer been assumed to transfer, Mistral would have shipped at Q6_K — **0.76 GB larger than necessary**. This section was deliberately left empty until measured for exactly that reason.
+
+### Head to head — the two deployment builds
+
+| | **VJLM-Llama-3B** | **VJLM-Mistral-7B** |
+|---|---|---|
+| compression | Q6_K + imatrix | Q5_K_M |
+| size | **2.462 GB** | 4.783 GB |
+| mean KLD | 0.009661 | **0.007710** |
+| grounded_f1 | 0.7521 | **0.7726** |
+| abstain_recall | 0.9833 | **1.0000** |
+| citation_rate | **0.5238** | 0.5102 |
+| CPU tokens/sec | **14.70** | 8.07 |
+| ~time for a 35-token answer | **~2.4 s** | ~4.3 s |
+
+**Mistral answers better; Llama deploys better.** Mistral leads on grounded F1 by 0.0205 and never mis-refuses. Llama is 1.94× smaller and 1.82× faster. Neither dominates, so the choice depends on the deployment box: on constrained hardware Llama is the pick, and where 4.8 GB and ~4 s latency are acceptable Mistral is measurably the better answerer.
+
+### Scope limit specific to Mistral — its evidence is thinner than Llama's
+
+Phase 9 was time-boxed when the machine had to be vacated. **Llama got a behavioural row for all seven builds; Mistral got one, on the winner.** So the Llama-style cross-check — where Q4_K_M failed on *both* instruments and confirmed they agree — is **not** repeated here. Mistral's rejected builds have a KLD number and nothing else, and Mistral's CPU throughput was measured for the selected build only.
+
+This does not weaken the selection, which rests on KLD plus a passed behavioural gate on the build that ships. It does mean the two models' evidence is not equally complete, and the tables above should not be read as though it were.
 
 ### Scope limit
 
