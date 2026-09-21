@@ -60,3 +60,17 @@ runtime/*.log
 # run.json, not this.
 experiments/matrix.log
 experiments/matrix_status.json
+
+# Published best-step adapters are an intentional exception to the rules above.
+# The weights themselves are tracked with Git LFS (Mistral's adapter is 160 MiB
+# and GitHub rejects >100 MB in plain git). Optimizer state is NOT published.
+!models/
+!models/**/*.safetensors
+models/**/optimizer.pt
+models/**/rng_state.pth
+models/**/scheduler.pt
+
+# Phase 9 driver transient state - the evidence is experiments/*.jsonl and
+# quantization/builds.json, not the live log.
+quantization/quant_matrix.log
+quantization/quant_status.json

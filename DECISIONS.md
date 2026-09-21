@@ -451,3 +451,91 @@ One judgement in it did survive contact and is worth keeping: **training precisi
 - **Remaining cost, stated:** arm C's recipe now differs from arm B's, which kept the fp32 head harmlessly on a 32k vocab. `C↔B` was already the loose comparison — different family, tokenizer, vocabulary and pretraining — so this adds one more item to a list that already forbids strong claims. Trading precision in the loose comparison to gain it in the tight one is the right direction, but it is a trade, not a free fix.
 - **Revisit trigger:** a card with more than 16 GB, or a decision from the above list. Whichever comes first.
 - **What survives regardless:** arm C's failure does not touch arms A and B. The finding that tuned Llama-3.2-3B matches tuned Mistral-7B on this evaluation rests on `822c92ed` and `baffeb06`, both complete and both scored on all 147 items.
+
+## QUANT-001 — Which GGUF build ships for CPU inference
+
+- **Status:** **Llama-3.2-3B decided. Mistral-7B in progress** — its section is deliberately empty rather than predicted.
+- **Date:** 2026-09-21
+- **Requirements:** 100% local CPU inference, no external API. Smallest build whose quality is *measurably* unchanged from full precision. Quality first, then size, then speed.
+- **Tooling:** llama.cpp pinned at **b11050 / commit `60b06ab9a`** (`runtime/llama/PINNED_TAG.txt`). CPU build for every deployment number; CUDA build only at build time for the importance matrix and reference logits, never for a reported throughput figure.
+
+### The measurement problem this entry is built around
+
+The Phase 8 behavioural set is **87 scorable items** and `SLM-001` pre-registered a ~0.03 F1 noise floor. Quantization damage above Q5 is far smaller than that, so **that instrument cannot see the effect being measured.** Reading "F1 didn't drop" as "quantization was free" would be drawing a conclusion from a tool incapable of supporting it.
+
+So quality is judged primarily by **KL-divergence per token against the model's own BF16 reference** — ~16,384 paired observations instead of 87 — with the behavioural set as a confirmatory gate that nothing large broke.
+
+The results below vindicate that choice. Between Q6_K and Q5_K_M, behavioural F1 scatters ±0.005 **with no ordering at all** — Q5_K_M, which fails KLD by 2.4×, scored *+0.0048 above the reference*. Only KLD separates them.
+
+### Three reference levels, so errors stay separable
+
+| level | artifact | isolates | measured |
+|---|---|---|---|
+| **L0a** | adapter on bf16 base, unquantized | the true fine-tune at full precision | 0.7513 |
+| **L0b** | merged bf16 weights | **merge error** | 0.7539 → **+0.0026** |
+| **L1** | BF16 GGUF | **conversion / chat-template error** | 0.7521 → **−0.0018** |
+| **L2** | quantized builds | **quantization error** | see table |
+
+Total path error, unmerged → GGUF: **+0.0008**. Citation rate and abstention were *identical to four decimals* across all three levels, which is the evidence the chat template survived conversion — the failure that most often corrupts GGUF results silently and would have poisoned every number below it.
+
+### Pre-registered gates, and three corrections I had to make
+
+Registered before any build was scored. Three needed fixing, all recorded rather than quietly adjusted:
+
+1. **`abstain_recall` stays 1.000** → **wrong baseline.** 1.000 came from Phase 8's *NF4* inference; the BF16 reference is **0.9833**. Corrected to *relative to L1*, before any quant was judged.
+2. **top-1 token flips ≤ 1%** → **mis-calibrated.** Q8_0, the most conservative build on the ladder, flips **2.18%**. As written the gate disqualified everything. Demoted to a diagnostic: most flips are near-ties where either token is fine. Damage is judged from the Δp distribution's asymmetry instead. Corrected having seen only Q8_0's scale.
+3. **Identical-output rate** was never a gate, and is explicitly not one — a quantized model can pick a different token in a near-tie with no quality loss.
+
+Final gates: mean KLD ≤ 0.01 · `abstain_recall` ≥ 0.9833 · `false_abstain` = 0 · `citation_rate` ≥ 0.5038 · paired F1 delta ≥ −0.01. **Narrow miss** = fails one gate by <20% of its margin → build the imatrix variant before stepping up a size class.
+
+### Llama-3.2-3B — results
+
+Lineage: **`meta-llama/Llama-3.2-3B-Instruct` @ `0cb88a4f`** → **LoRA r=16** (arm A, final step 150, `822c92ed`) → merged bf16 → **GGUF Q6_K + VJLM imatrix**.
+
+| build | GB | mean KLD | f1 | Δ vs ref | cite | absR | gate |
+|---|---|---|---|---|---|---|---|
+| BF16 (L1 reference) | 5.992 | — | 0.7521 | — | 0.5238 | 0.9833 | — |
+| Q8_0 | 3.187 | 0.001647 | 0.7526 | +0.0005 | 0.5238 | 0.9833 | **pass** |
+| **Q6_K-imat** | **2.462** | **0.009661** | **0.7521** | **+0.0000** | **0.5238** | **0.9833** | **pass — SELECTED** |
+| Q6_K | 2.462 | 0.010682 | 0.7550 | +0.0029 | 0.5238 | 0.9833 | fail, by 6.8% |
+| Q5_K_M-embd8 | 2.252 | 0.022547 | 0.7548 | +0.0027 | 0.5238 | 0.9833 | fail |
+| Q5_K_M-imat | 2.163 | 0.019743 | 0.7494 | −0.0027 | 0.5102 | 1.0000 | fail |
+| Q5_K_M | 2.163 | 0.023813 | 0.7569 | +0.0048 | 0.5238 | 0.9833 | fail |
+| Q4_K_M | 1.881 | 0.063531 | 0.7408 | −0.0113 | 0.5102 | 0.9667 | fail |
+
+- **Selected: `Q6_K-imat`, 2.462 GB — 2.43× compression, and the only build that reproduced the reference exactly on grounded F1, citation rate and abstention simultaneously.** Q8_0 also passes and is 29% larger for nothing measurable; under quality → size → speed, size breaks the tie.
+- **Q4_K_M is the build that validates the method.** It is the only one where behaviour visibly degrades — F1 −0.0113, citation down, and **`abstain_recall` 0.9667**, i.e. it answers two questions it should refuse. That is the hallucination axis moving. Its KLD is 38× Q8_0's. Both instruments agree at the bottom of the ladder, which is why KLD's verdict higher up is credible rather than an uninterpretable number. **Per the standing instruction, Q4 ships only if it passes the same gates. It does not.**
+
+### The imatrix question, answered by measurement
+
+| quant | plain | + VJLM imatrix | improvement |
+|---|---|---|---|
+| Q5_K_M | 0.023813 | 0.019743 | **−17.1%** |
+| Q6_K | 0.010682 | **0.009661** | **−9.6%** |
+
+It helps measurably, and **more at lower precision** — the predicted pattern, now with VJLM numbers. At Q6_K it was the difference between failing and passing: **the narrow-miss rule fired on a threshold, not a hunch, and saved 725 MB (23%) against falling back to Q8_0.**
+
+Corpus: 518k tokens, 61% sampled `rag_chunks.jsonl` + 39% `train.jsonl` rendered in the model's own chat template, built by `quantization/make_imatrix_corpus.py` with `--parse-special`. Val and test splits are excluded — calibrating on held-out text would leak the benchmark into the artifact being benchmarked.
+
+### Rejected, with reasons
+
+- **Q8_0** — passes every gate, 29% larger than the selected build for no measurable quality. Kept on disk as the conservative fallback if a future corpus ever shows Q6_K-imat straining.
+- **Q5_K_M and its variants** — KLD 0.0197–0.0238, two to three times the gate. Behaviourally they look fine, which is precisely the trap this entry exists to avoid.
+- **`Q5_K_M-embd8`** (`--token-embedding-type q8_0 --output-tensor-type q8_0`) — the hypothesis that Llama's 128,256-token vocabulary makes embedding/output tensors worth protecting. **Tested and rejected:** 5.3% better KLD for 4% more size, and still nowhere near the gate. Real effect, not a useful one.
+- **Q4_K_M** — fails on both instruments, and is the only build to break abstention.
+
+### Mistral-7B-Instruct-v0.3 — in progress
+
+Lineage: **`mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708`** → **QLoRA r=16, NF4 base** (arm B, final step 150, `baffeb06`) → merged bf16 → *GGUF build pending*.
+
+Deliberately left empty. Llama's ladder is not evidence for Mistral's: the vocabularies differ by 4× (32,768 vs 128,256), which changes how much of the model the embedding and output tensors represent and therefore how quantization damage distributes.
+
+### Scope limit
+
+Every number here is measured on **templated held-out items auto-derived from the VJLM corpus**, the same weakness `HANDOFF.md` §3.2 records for retrieval. They rank builds of the same model against each other on identical data, which is what this decision needs. They do **not** establish real answer quality — `evaluation/questions.jsonl` is still empty and Phase 5 remains the blocker.
+
+**Hindi and Telugu were requested and are out of scope, with a reason.** The corpus contains **zero Devanagari** across all 1,493 train/val/test rows and **4 of 13,051** RAG chunks contain any Telugu. The models were never trained on either language and no evaluation set exists. There is nothing representative to calibrate an imatrix on and nothing to verify against, so multilingual quality is **unmeasured**, not preserved. Doing it properly needs a human-written Hindi/Telugu question set first — and it would measure the *base* models' multilingual ability, not anything the fine-tune taught.
+
+### Revisit trigger
+
+Phase 5 produces a real question set — re-measure, do not merely cite. Also if the deployment target changes (a different CPU changes the throughput ranking, not the quality one), or if llama.cpp's quantization changes materially from the pinned build.

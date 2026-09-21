@@ -25,7 +25,8 @@ Derived from the plan:
 | [`data_catalog/classification.md`](data_catalog/classification.md) | Phase 2 — fine-tune vs RAG across all 14 public categories |
 | [`experiments/PLAN.md`](experiments/PLAN.md) | Phases 6–9 — which models, FT methods, quantizations and retrievers get compared |
 | [`docs/phase1_site_recon.md`](docs/phase1_site_recon.md) | Phase 1 — 9 measured findings about the VNRVJIET site |
-| [`docs/finetuning.md`](docs/finetuning.md) | Phase 8 — where the trained models are, what they are, how they were trained, what they scored |
+| [`docs/finetuning.md`](docs/finetuning.md) | Phases 8–9 — the models, how they were trained, how they were compressed, what they scored |
+| [`models/`](models) | The three published fine-tuned adapters, with a model card each |
 
 ## The three-way separation
 
@@ -92,7 +93,7 @@ Last updated 2026-09-18. Full detail in [`HANDOFF.md`](HANDOFF.md).
 | 6 RAG baseline | **Built, not decided.** BM25 + dense + hybrid all run; `RAG-001` cannot be settled until Phase 5 exists |
 | 7 base SLM selection | **Proposed, not decided.** `SLM-001` has its first measured rows; `configs/models.yaml` stays null until the matrix completes |
 | 8 fine-tuning | **All 5 configurations scored.** LoRA vs QLoRA measured; best-checkpoint rows pending |
-| 9 quantization | Blocked on Phase 8 |
+| 9 quantization | **Llama decided: Q6_K + imatrix, 2.43x smaller, no measurable loss.** Mistral in progress — `QUANT-001` |
 | 10–13 auth / retrieval / prompt / UI | Working, with authentication still a role simulation |
 | 14–15 final eval, maintenance | Not started |
 
@@ -139,6 +140,27 @@ or step 75 (Mistral) of 150, then rises for the rest of training. The scored
 adapters are the **final** step, because that is what `save_model()` writes.
 Best-checkpoint rows are being scored separately to settle whether one epoch
 beats two.
+
+### The models, end to end
+
+| | VJLM-Llama-3B | VJLM-Mistral-7B |
+|---|---|---|
+| **Base model** | `meta-llama/Llama-3.2-3B-Instruct` @ `0cb88a4f` | `mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708` |
+| **Fine-tuning** | LoRA r=16, bf16 base (arm A) | QLoRA r=16, 4-bit NF4 base (arm B) |
+| **Adapter** | 97 MB, `models/vjlm-llama3b-lora/` | 168 MB, `models/vjlm-mistral7b-qlora/` |
+| **grounded_f1** | 0.7567 | 0.7654 |
+| **Compression** | **GGUF Q6_K + VJLM imatrix** | *in progress* |
+| **Deployed size** | **2.46 GB**, 2.43x smaller than bf16 | — |
+| **Quantization error** | **KLD 0.0097**, grounded F1 **+0.0000** | — |
+
+A third adapter, `models/vjlm-llama3b-qlora/` (arm C), is published because it
+is what makes the LoRA-vs-QLoRA comparison reproducible, not because it ships.
+
+Compression was chosen by a **pre-registered** rule — quality, then size, then
+speed — against a per-token KL-divergence gate, because the 87-item behavioural
+set cannot resolve quantization damage. Q4_K_M was built and **rejected**: it is
+the only build that breaks abstention, answering two questions it should refuse.
+Reasoning, the full ladder and the rejected builds are in `QUANT-001`.
 
 **So the next thing that matters is still Phase 5.** Retrieval, the base model
 and quantization all claim to be decided "by measurement", and every benchmark

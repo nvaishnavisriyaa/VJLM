@@ -77,7 +77,7 @@ def http_generator(retries=3):
     return gen, {"serve_backend": "http", "serve_url": URL}
 
 
-def hf_generator(base, adapter, qlora, seed):
+def hf_generator(base, adapter, qlora, seed, revision=None):
     """In-process transformers. The prompt is rendered exactly as
     training/train_local.py rendered it and as rag/retrieve.py sends it, so
     train, eval and serve all see the same string."""
@@ -85,7 +85,15 @@ def hf_generator(base, adapter, qlora, seed):
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     torch.manual_seed(seed)
-    tok = AutoTokenizer.from_pretrained(adapter or base)
+    # A local directory has no revision; only pin when loading from the hub.
+    # Before 2026-09-19 --revision was RECORDED in every row but never passed
+    # here, so the pin was a claim rather than a guarantee. The cache happened
+    # to hold the right commits, so the Phase 8 weights were correct - but an
+    # unenforced provenance field is exactly the kind of thing this project
+    # exists to not do.
+    rev = None if os.path.isdir(base) else revision
+    tok = AutoTokenizer.from_pretrained(adapter or base,
+                                        **({} if (adapter or rev is None) else {"revision": rev}))
     pad, _ = pick_pad(tok)
     tok.pad_token = pad
     tok.padding_side = "right"
@@ -98,6 +106,8 @@ def hf_generator(base, adapter, qlora, seed):
             load_in_4bit=True, bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dtype)
     t0 = time.time()
+    if rev:
+        kw["revision"] = rev
     model = AutoModelForCausalLM.from_pretrained(base, **kw)
     if adapter:
         from peft import PeftModel
@@ -136,7 +146,13 @@ def n_tokens(s):
     return len(re.findall(r"\S+", s))
 
 
+KNOWN_ROLES = ("base", "tuned", "best", "l0-unmerged", "l0-merged", "l1-gguf")
+
+
 def run(a):
+    if a.role and not (a.role in KNOWN_ROLES or a.role.startswith("l2-")):
+        print("  WARNING: unrecognised --role %r; recording anyway. "
+              "Convention: base|tuned|best|l0-*|l1-gguf|l2-<QUANT>." % a.role)
     data = [json.loads(l) for l in open(TEST, encoding="utf-8")]
     if a.limit:
         data = data[:a.limit]
@@ -144,7 +160,7 @@ def run(a):
     if a.backend == "hf":
         if not a.base:
             sys.exit("--backend hf needs --base")
-        gen, meta = hf_generator(a.base, a.adapter, a.qlora, a.seed)
+        gen, meta = hf_generator(a.base, a.adapter, a.qlora, a.seed, a.revision)
     else:
         gen, meta = http_generator()
 
@@ -310,7 +326,23 @@ def main():
     # side of the curve. Scoring "best" as its own row makes "does one epoch
     # beat two" a measurement instead of an argument from eval_loss, which is
     # token-level cross-entropy and not the behaviour being graded.
-    ap.add_argument("--role", default=None, choices=["base", "tuned", "best"])
+    # l0-* and l1-* are Phase 9 reference levels, not Phase 8 arms. They exist
+    # so merge error, GGUF conversion error and quantization error stay
+    # separable instead of being summed into one number:
+    #   l0-unmerged  adapter on a bf16 base, unquantized  - the true fine-tune
+    #   l0-merged    merged bf16 weights, unquantized     - isolates MERGE error
+    #   l1-gguf      BF16 GGUF through llama-server       - isolates CONVERSION
+    # Free-form, with a documented convention, because Phase 9 needs one role
+    # per quantized build and a fixed choices list would have to grow every
+    # time the ladder does. Unknown values warn rather than abort - the role is
+    # a provenance label, and refusing to record a completed 147-item run over
+    # a naming quibble would waste the run.
+    #   Phase 8:  base | tuned | best
+    #   Phase 9:  l0-unmerged  adapter on bf16 base, unquantized
+    #             l0-merged    merged bf16 weights   -> isolates MERGE error
+    #             l1-gguf      BF16 GGUF             -> isolates CONVERSION error
+    #             l2-<QUANT>   a quantized build     -> isolates QUANTIZATION
+    ap.add_argument("--role", default=None)
     ap.add_argument("--label", default="run")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=42)

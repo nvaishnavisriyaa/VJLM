@@ -52,11 +52,44 @@ the exact revision recorded in its `run.json`.
 Revisions are pinned in `training/run_matrix.py` and recorded in every result
 row, because `main` moves and "we used Mistral-7B" is not a reproducible claim.
 
-### Not yet built
+### Published adapters — `models/`
 
-No merged fp16 model and no GGUF quantization exist. That is Phase 9
-(`QUANT-001`), which the completed matrix now unblocks. `runtime/start_llama.cmd`
-still points at a model path that does not exist on this machine.
+The three **final-step** adapters are committed via Git LFS with a model card
+each, so the fine-tuned weights survive this machine. 362 MB total.
+
+| directory | arm | base model | fine-tuning | adapter |
+|---|---|---|---|---|
+| `models/vjlm-llama3b-lora/` | A | Llama-3.2-3B-Instruct | LoRA r=16, bf16 base | 97 MB |
+| `models/vjlm-llama3b-qlora/` | C | Llama-3.2-3B-Instruct | QLoRA r=16, NF4 base | 97 MB |
+| `models/vjlm-mistral7b-qlora/` | B | Mistral-7B-Instruct-v0.3 | QLoRA r=16, NF4 base | 168 MB |
+
+**These are the root artifacts.** Everything else derives from them, one way
+only: adapter + base -> merged -> GGUF -> quantized. Given an adapter every
+GGUF rebuilds in about an hour; given only a GGUF the adapter cannot be
+recovered, because the delta is merged in and then quantized away.
+
+### Compressed for CPU deployment — Phase 9 / `QUANT-001`
+
+| model | base | fine-tuning | compression | size | error vs full precision |
+|---|---|---|---|---|---|
+| **VJLM-Llama-3B** | `meta-llama/Llama-3.2-3B-Instruct` @ `0cb88a4f` | LoRA r=16 (arm A) | **GGUF Q6_K + VJLM imatrix** | **2.46 GB** (from 5.99, **2.43x**) | **KLD 0.0097**, grounded F1 **+0.0000** |
+| **VJLM-Mistral-7B** | `mistralai/Mistral-7B-Instruct-v0.3` @ `c170c708` | QLoRA r=16 (arm B) | *in progress* | — | — |
+
+Measured end to end, with each error isolated rather than summed:
+
+| stage | what it measures | Llama |
+|---|---|---|
+| merge | folding the adapter into bf16 weights | +0.0026 |
+| conversion | HF -> BF16 GGUF, incl. chat template | -0.0018 |
+| quantization | BF16 -> Q6_K-imat | +0.0000 |
+| **total** | adapter -> deployed build | **+0.0008** |
+
+Built with llama.cpp pinned at **b11050 / `60b06ab9a`**. Full ladder, the
+rejected builds, the imatrix A/B and the pre-registered gates are in
+`QUANT-001`.
+
+`runtime/start_llama.cmd` serves a build from `quantization/builds/gguf/`;
+GGUFs are git-ignored and rebuilt locally via `quantization/run_quant_matrix.py`.
 
 ---
 
