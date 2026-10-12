@@ -61,14 +61,15 @@ def build(n=180):
     return out
 
 
-def score(retr, bench, mode, k=5):
+def score(retr, bench, mode, k=5, expand=False):
     """Recall@k and MRR at the DOCUMENT level (did we find the right source?)."""
     hits = 0
     rr = 0.0
     lat = []
     for b in bench:
         t0 = time.time()
-        res = retr.search(b["question"], role=b["role"], topk=k, mode=mode)
+        res = retr.search(b["question"], role=b["role"], topk=k, mode=mode,
+                          expand=expand)
         lat.append(time.time() - t0)
         ids = [c["source_id"] for c in res]
         if b["gold_source_id"] in ids:
@@ -76,7 +77,8 @@ def score(retr, bench, mode, k=5):
             rr += 1.0 / (ids.index(b["gold_source_id"]) + 1)
     n = len(bench)
     lat.sort()
-    return {"mode": mode, "recall@%d" % k: round(hits / n, 3), "mrr": round(rr / n, 3),
+    return {"mode": mode + ("+syn" if expand else ""),
+            "recall@%d" % k: round(hits / n, 3), "mrr": round(rr / n, 3),
             "p50_ms": round(lat[n // 2] * 1000, 1), "p95_ms": round(lat[int(n * 0.95)] * 1000, 1),
             "n": n}
 
@@ -95,17 +97,25 @@ def main():
 
     from rag.retrieve import Retriever
     r = Retriever()
-    modes = ["bm25"] + (["dense", "hybrid"] if r.dense is not None else [])
+    base_modes = ["bm25", "coverage", "lexical"]
+    if r.dense is not None:
+        base_modes += ["dense", "hybrid", "hybrid3"]
+    # Expansion only touches the lexical arm, so a dense-only run would be
+    # identical with it on - testing it would just record a duplicate row.
+    # Coverage without expansion degrades to exact-match coverage, which is a
+    # meaningful control: it isolates what the SYNONYMS add from what the
+    # coverage MEASURE adds.
+    modes = [(m, False) for m in base_modes] +             [(m, True) for m in base_modes if m != "dense"]
     if r.dense is None:
         print("NOTE: dense vectors not built - comparing BM25 only. "
               "Run rag/index.py to enable dense and hybrid.")
 
     print("\n%-8s %-10s %-7s %-9s %-9s" % ("mode", "recall@%d" % a.k, "mrr", "p50_ms", "p95_ms"))
     results = []
-    for m in modes:
-        s = score(r, bench, m, a.k)
+    for m, xp in modes:
+        s = score(r, bench, m, a.k, expand=xp)
         results.append(s)
-        print("%-8s %-10s %-7s %-9s %-9s" % (m, s["recall@%d" % a.k], s["mrr"], s["p50_ms"], s["p95_ms"]))
+        print("%-10s %-10s %-7s %-9s %-9s" % (s["mode"], s["recall@%d" % a.k], s["mrr"], s["p50_ms"], s["p95_ms"]))
 
     out = os.path.join(ROOT, "experiments", "retrieval_results.jsonl")
     with open(out, "a", encoding="utf-8") as f:

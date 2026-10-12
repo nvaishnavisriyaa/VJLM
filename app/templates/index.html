@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VJLM — Vignana Jyothi Language Model</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>VJLM</h1>
+    <span class="sub">Vignana Jyothi Language Model</span>
+  </div>
+
+  <span class="chip" id="chip-model" title="Active model and knowledge-base size">
+    <span class="dot"></span><span id="model-txt">loading…</span>
+  </span>
+
+  <span class="chip act" id="chip-sync" title="Click to refresh the knowledge base now">
+    <span class="dot"></span><span id="sync-txt">…</span>
+  </span>
+
+  <span class="chip" id="chip-llama" title="Local llama-server status">
+    <span class="dot"></span><span id="llama-txt">…</span>
+  </span>
+
+  <button class="icon-btn" id="theme" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
+</header>
+
+<main id="main">
+  <div class="thread" id="thread">
+    <div class="empty" id="empty">
+      <h2>Ask about VNRVJIET</h2>
+      <p>
+        Answers are generated locally on CPU from the college's own public
+        documents, with a citation for every claim. If the sources don't contain
+        the answer, VJLM says so instead of guessing.
+      </p>
+      <div class="examples" id="examples">
+        <button data-q="What is the attendance requirement?">
+          What is the attendance requirement?
+          <span class="hint">regulations</span>
+        </button>
+        <button data-q="Which regulation applies to third year B.Tech?">
+          Which regulation applies to third year B.Tech?
+          <span class="hint">regulations</span>
+        </button>
+        <button data-q="What are the placement statistics?">
+          What are the placement statistics?
+          <span class="hint">placements</span>
+        </button>
+        <button data-q="What are my internal marks?">
+          What are my internal marks?
+          <span class="hint">should abstain — not public data</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div id="notice-slot"></div>
+  <div class="composer">
+    <div class="controls">
+      <span class="field">
+        <label for="role">Role</label>
+        <select id="role">
+          <option value="student">Student</option>
+          <option value="faculty">Faculty</option>
+        </select>
+      </span>
+      <span class="field">
+        <label for="mode">Retrieval</label>
+        <select id="mode" title="Which retriever ranks the passages">
+          <option value="hybrid">Hybrid</option>
+          <option value="bm25">BM25</option>
+          <option value="dense">Dense</option>
+        
+      <option value="coverage">Coverage</option>
+      <option value="lexical">Lexical</option>
+      <option value="hybrid3">Hybrid3</option></select>
+      </span>
+      <span class="chip" id="chip-rbac" title="Access control is applied before ranking, not in the prompt">
+        RBAC filters before retrieval
+      </span>
+    </div>
+
+    <div class="box">
+      <textarea id="q" rows="1" placeholder="Ask about regulations, calendar, placements, departments…"></textarea>
+      <button class="send" id="send">Ask</button>
+    </div>
+
+    <div class="hint-row">
+      <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+      <span id="foot-note">local CPU · no external API</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -28,6 +28,43 @@ STATE = os.path.join(ROOT, "ingestion", "state", "sync_state.json")
 REFRESH_STATE = os.path.join(ROOT, "ingestion", "state", "refresh_state.json")
 CONFIG = os.path.join(ROOT, "configs", "ingestion.yaml")
 DUE_FILE = os.path.join(ROOT, "ingestion", "state", "due_ids.txt")
+# Scanned documents extract.py deferred past its OCR budget. While any remain,
+# cycles run back to back and always extract, so they arrive in batches.
+OCR_BACKLOG = os.path.join(ROOT, "preprocessing", "out", "ocr_backlog.json")
+BACKLOG_SLEEP_S = 60
+EXTRACTED = os.path.join(ROOT, "preprocessing", "out", "extracted.json")
+
+
+def _stay_awake(on):
+    """Hold off Windows idle sleep while a cycle is working, like a download
+    manager does - and only then. Sleep suspends network I/O mid-render
+    (ERR_NETWORK_IO_SUSPENDED), which stalled a 457-page render and left pages
+    that were loading at that moment empty (INGEST-008). A closed lid or a
+    manual Sleep still sleeps; no system setting is changed. No-op elsewhere."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x1, 0x2
+        # DISPLAY too: this laptop uses Modern Standby, which begins when the
+        # SCREEN turns off; SYSTEM_REQUIRED alone did not stop it - the event
+        # log shows three standbys mid-cycle (18:43-20:47, 21:07, 21:17). This
+        # is what a video player requests, and only while a cycle is working.
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ((ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED) if on else 0))
+    except Exception:
+        pass
+
+
+def pending_extraction():
+    """Sources whose current snapshot has never been extracted - e.g. fetched by
+    a cycle that was stopped before its extract stage. Without this they looked
+    unchanged to every later cycle and never reached the knowledge base."""
+    state, done = read_json(STATE, {}), read_json(EXTRACTED, {})
+    return [s for s, st in state.items()
+            if isinstance(st, dict) and st.get("snapshot")
+            and st.get("status") not in ("retired", "not_found")
+            and done.get(s) != st.get("content_hash")]
 
 # Fallbacks if configs/ingestion.yaml cannot be parsed. Same values as the file.
 DEFAULT_INTERVALS = {"daily": "PT6H", "weekly": "P1D", "monthly": "P7D",
@@ -115,9 +152,22 @@ def split_by_type(ids):
                 kind[r["source_id"]] = r["document_type"]
     except FileNotFoundError:
         return list(ids), []
-    pdfs = [i for i in ids if kind.get(i) == "pdf"]
+    # Everything that is not a page is a document fetched over plain HTTP:
+    # pdf, docx, xlsx. Listing only "pdf" here would leave new types unfetched.
     pages = [i for i in ids if kind.get(i) == "html"]
-    return pdfs, pages
+    docs = [i for i in ids if i in kind and kind[i] != "html"]
+    return docs, pages
+
+
+def has_rendered_text(st):
+    """True if a page's snapshot is render.py's text rather than the SPA shell
+    a plain-HTTP fetch returns (INGEST-004)."""
+    snap = (st or {}).get("snapshot")
+    path = os.path.join(ROOT, "ingestion", "snapshots", snap or "")
+    if not snap or not os.path.exists(path):
+        return False
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return not f.read(64).lstrip().lower().startswith(("<!doctype", "<html"))
 
 
 def due_sources(now=None):
@@ -137,6 +187,13 @@ def due_sources(now=None):
         if r.get("active", "true").lower() != "true":
             continue
         st = state.get(r["source_id"]) or {}
+        # A page with no rendered text is missing knowledge, not fresh
+        # knowledge: its timestamp may come from a plain-HTTP fetch that only
+        # stored the SPA shell (INGEST-004). Always due until rendered.
+        if (r.get("document_type") == "html" and not has_rendered_text(st)
+                and st.get("status") != "not_found"):
+            due.append(r["source_id"])
+            continue
         last = st.get("last_success") or st.get("last_seen") or 0
         gap = intervals.get(r.get("update_frequency", "unknown"),
                             intervals.get("unknown", 7 * 86400))
@@ -169,6 +226,7 @@ class Refresher:
         out["last_discover"] = rs.get("last_discover")
         out["due_now"] = len(due_sources())
         out["running"] = self._lock.locked()
+        out["ocr_backlog"] = len(read_json(OCR_BACKLOG, []))
         return out
 
     def _set(self, phase, detail=""):
@@ -255,6 +313,7 @@ class Refresher:
         """One pass. Returns True if the index was rebuilt."""
         if not self._lock.acquire(blocking=False):
             return False                      # a cycle is already running
+        _stay_awake(True)
         try:
             self.state.update(started=time.time(), finished=None, error=None, changed=0)
             rs = read_json(REFRESH_STATE, {})
@@ -277,8 +336,16 @@ class Refresher:
             #    daily, at the cost of one 4 KB request, while the 24h timer
             #    stays as a backstop in case the signal is ever wrong.
             stale = now - rs.get("last_discover", 0) >= DISCOVER_INTERVAL_H * 3600
-            if force or deployed or stale:
-                why = "deploy" if deployed else ("%dh since last" % DISCOVER_INTERVAL_H)
+            # Rendering harvests every link a page contains; some lead to pages
+            # the bundle only has as templates (faculty profiles, blog posts).
+            # New links since the last discovery are a reason to discover now,
+            # so the crawl converges in consecutive cycles, not days apart.
+            links_file = os.path.join(ROOT, "ingestion", "state", "rendered_links.json")
+            new_links = (os.path.exists(links_file)
+                         and os.path.getmtime(links_file) > rs.get("last_discover", 0))
+            if force or deployed or stale or new_links:
+                why = ("deploy" if deployed else "new links from rendered pages" if new_links
+                       else "%dh since last" % DISCOVER_INTERVAL_H)
                 self._set("discovering", "looking for new documents (%s)" % why)
                 self._run("ingestion/crawler/discover.py")
                 rs["last_discover"] = now
@@ -302,7 +369,9 @@ class Refresher:
                                       "pages stay on their own intervals"
                           % (self._why, since / 3600))
                 deployed, self._bundle = False, None
-            elif deployed:
+            elif deployed or force:
+                # A forced cycle means "check everything now" - including pages,
+                # which otherwise wait out their own 7-30 day interval.
                 _, all_pages = split_by_type(all_source_ids())
                 added = [p for p in all_pages if p not in due]
                 if added:
@@ -312,7 +381,8 @@ class Refresher:
                 rs["last_deploy_recheck"] = now
                 write_json(REFRESH_STATE, rs)
 
-            if not due and not force:
+            backlog = read_json(OCR_BACKLOG, []) or pending_extraction()
+            if not due and not force and not backlog:
                 self._set("idle", "nothing due")
                 rs["last_cycle"] = now
                 write_json(REFRESH_STATE, rs)
@@ -337,14 +407,23 @@ class Refresher:
                 # the browser entirely.
                 from site_version import write as save_bundle
                 if not deployed and not force:
-                    self._set("fetching", "pages skipped - %s" % self._why)
-                    pages = []
-                else:
+                    # Unchanged bundle: a page already rendered cannot have
+                    # changed. A page NEVER rendered is not a recheck, it is
+                    # missing knowledge - skipping it too meant a newly found
+                    # page waited for the next site deploy to be read at all.
+                    pages = [p for p in pages if not has_rendered_text(before.get(p))
+                             and before.get(p, {}).get("status") != "not_found"]
+                    if not pages:
+                        self._set("fetching", "pages skipped - %s" % self._why)
+                if pages:
                     self._set("rendering", "%d page%s in headless browser (%s)"
                               % (len(pages), "" if len(pages) == 1 else "s", self._why))
+                    pages_file = DUE_FILE + ".pages"
+                    with open(pages_file, "w", encoding="utf-8") as f:
+                        f.write("\n".join(pages))
                     self._run("ingestion/crawler/render.py",
-                              ["--only-ids", DUE_FILE, "--delay", str(crawl_delay())])
-                    if self._bundle:
+                              ["--only-ids", pages_file, "--delay", str(crawl_delay())])
+                    if self._bundle and (deployed or force):
                         save_bundle(self._bundle)
             after = read_json(STATE, {})
 
@@ -354,7 +433,7 @@ class Refresher:
 
             # 3. only rebuild when content actually moved - re-extracting 652
             #    PDFs because a timestamp ticked would be wasteful and pointless
-            if not changed and not force:
+            if not changed and not force and not backlog:
                 self._set("idle", "checked %d, nothing changed" % len(due))
                 rs["last_cycle"] = now
                 write_json(REFRESH_STATE, rs)
@@ -390,6 +469,7 @@ class Refresher:
             return False
         finally:
             self.state["finished"] = time.time()
+            _stay_awake(False)
             self._lock.release()
 
     # -- background loop -------------------------------------------------
@@ -398,7 +478,10 @@ class Refresher:
         self.ensure_index()          # make the app usable before crawling
         while not self._stop.is_set():
             self.cycle()
-            self._stop.wait(CYCLE_SLEEP_S)
+            # A scanned-document backlog is work in progress, not a schedule:
+            # continue it after a short breath instead of 15 minutes.
+            self._stop.wait(BACKLOG_SLEEP_S if read_json(OCR_BACKLOG, [])
+                            else CYCLE_SLEEP_S)
 
     def start(self, initial_delay=2.0):
         """Called by the app at startup. Non-blocking: the UI serves from the
@@ -433,4 +516,11 @@ if __name__ == "__main__":
     else:
         print("running one refresh cycle (force=%s)" % force)
         r.cycle(force=force)
+        # The dense build runs on a daemon thread so the app can serve while it
+        # works. From the command line nothing else keeps the process alive, so
+        # exiting here would kill it mid-build and leave dense.npy stale -
+        # which RAG-IDX-001 showed is how the index becomes misaligned.
+        if r._embedding and r._embedding.is_alive():
+            print("waiting for the dense index ...", flush=True)
+            r._embedding.join()
         print(json.dumps(r.status(), indent=2, default=str))

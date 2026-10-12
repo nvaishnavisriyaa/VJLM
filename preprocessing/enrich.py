@@ -58,11 +58,23 @@ def redact(text):
     return text
 
 
-def detect_department(url, text):
-    hay = (url + " " + text[:400]).lower()
-    for dept, keys in DEPARTMENTS.items():
-        for k in keys:
-            if k in hay:
+# Departments are only inferred from body text for documents that ARE about a
+# department. On a general page ("pay your B.Tech, M.Tech, MCA or Ph.D fees")
+# a keyword in the first 400 characters says nothing about whose page it is -
+# /payment was tagged "mca", and that tag reached the prompt and the sources
+# panel (APP-002). Substring matching was also loose: "ece" matched "pieces".
+DEPT_TEXT_CATEGORIES = {"departments", "faculty", "syllabus", "research"}
+_DEPT_RX = {d: re.compile("|".join(r"(?<![a-z0-9])" + re.escape(k) + r"(?:(?![a-z0-9])|(?=dept))" for k in ks))
+            for d, ks in DEPARTMENTS.items()}
+
+
+def detect_department(url, text, category=None):
+    hays = [url.lower()]
+    if category in DEPT_TEXT_CATEGORIES:
+        hays.append(text[:400].lower())
+    for hay in hays:
+        for dept, rx in _DEPT_RX.items():
+            if rx.search(hay):
                 return dept
     return None
 
@@ -89,7 +101,7 @@ def main():
     seen = {}
     dept_n = year_n = pii_n = dup_n = 0
     for r in rows:
-        d = detect_department(r["url"], r["text"])
+        d = detect_department(r["url"], r["text"], r.get("category"))
         if d:
             r["department"] = d
             dept_n += 1

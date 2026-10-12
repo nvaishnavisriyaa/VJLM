@@ -34,13 +34,25 @@ class BM25:
             for w in c: self.inv[w].append(i)
 
     def search(self, q, topk=50):
-        qt = tok(q); scores = defaultdict(float)
-        for w in qt:
-            if w not in self.idf: continue
+        """Plain BM25 over the literal query tokens."""
+        return self.search_weighted([(w, 1.0) for w in tok(q)], topk)
+
+    def search_weighted(self, terms, topk=50):
+        """BM25 over (token, weight) pairs.
+
+        Weights let query expansion contribute at a discount: a WordNet
+        synonym enters at ~0.35 against 1.0 for a term the user typed, so it
+        can lift a document that was just below the cut but cannot outrank a
+        literal match. Weight 1.0 throughout is ordinary BM25.
+        """
+        scores = defaultdict(float)
+        for w, wt in terms:
+            if w not in self.idf or wt <= 0:
+                continue
             idf = self.idf[w]
             for i in self.inv[w]:
                 f = self.tf[i][w]
-                scores[i] += idf * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * self.len[i] / self.avg))
+                scores[i] += wt * idf * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * self.len[i] / self.avg))
         return sorted(scores.items(), key=lambda x: -x[1])[:topk]
 
 CACHE = os.path.join(IDX, "dense_cache.npz")
@@ -75,8 +87,14 @@ def build_dense(rows, threads=0):
 
     cache = {}
     if os.path.exists(CACHE):
-        z = np.load(CACHE, allow_pickle=False)
-        ids, vecs = z["ids"], z["vecs"]
+        # np.load on an .npz is lazy and holds the file open until closed.
+        # On Windows an open file cannot be replaced, so save_cache()'s
+        # os.replace() failed with "Access is denied" on EVERY incremental
+        # build - only from-scratch builds (no cache yet) ever succeeded. The
+        # failure left dense.npy stale while BM25 was rebuilt, misaligning the
+        # two (see RAG-IDX-001). Materialise and close before anything writes.
+        with np.load(CACHE, allow_pickle=False) as z:
+            ids, vecs = z["ids"][:], z["vecs"][:]
         cache = {str(k): vecs[i] for i, k in enumerate(ids)}
         print(f"  cache: {len(cache)} vectors already embedded")
 

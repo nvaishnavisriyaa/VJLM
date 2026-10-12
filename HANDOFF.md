@@ -351,7 +351,9 @@ Also worth cutting for the first successful run: `max_length` 1024 → 512, `num
 
 ```bash
 git clone https://github.com/nvaishnavisriyaa/VJLM.git && cd VJLM
-pip install pypdf fastembed flask numpy
+pip install -r requirements.txt
+python -m playwright install chromium   # the page renderer's browser - without
+                                        # it every web page is missing (INGEST-004)
 ```
 
 ### 5.1 Rebuild the knowledge base (~15 min, no GPU)
@@ -422,13 +424,11 @@ Full matrix in [`experiments/PLAN.md`](experiments/PLAN.md). The headline:
 
 ---
 
-## 7. The blocker only the college can clear
+## 7. `docs.vnrvjiet.ac.in` — resolved 2026-09-30
 
-`https://docs.vnrvjiet.ac.in/robots.txt` is `User-agent: * / Disallow: /`, and that subdomain holds **1,252 of the 1,923 PDFs** — including the syllabus books and full regulation rulebooks. On `www` we found only 1 syllabus PDF.
+`https://docs.vnrvjiet.ac.in/robots.txt` is `Disallow: /`, and that host holds the rulebooks (B.Tech R25/R22/A19/R19/R18, M.Tech, MCA), condonation forms and scholarship documents — nowhere else on the site.
 
-We honour it: the crawler skips that host, and `discover.py` reports `skipped 1252 (robots.txt disallowed)`.
-
-**Ask VNRVJIET IT for written permission**, ideally an `Allow` rule for the crawler's user-agent so no exception logic is needed. Recorded as `INGEST-002` (status: BLOCKED) with all options. Everything else is built on the 671 `www` PDFs, so this is additive — nothing is wasted while permission is sought.
+VNRVJIET's IT team reported the file is not in their control and cannot be changed, and the project decided VJLM extracts everything the official site publishes. `configs/ingestion.yaml` → `scope.respect_robots_txt: false` now means: fetch only the **documents that `www` itself links to** (what "Download PDF" gives a student) — the host is never crawled. `/api/` and `/admin` stay excluded. Set it back to `true` for strict compliance. Full reasoning: `INGEST-002 (update)` in `DECISIONS.md`.
 
 ---
 

@@ -30,9 +30,15 @@ domain: "vnrvjiet.ac.in"
 scope:
   # Phase 1 is public data only. Never crawl authenticated or private areas.
   allow_public_only: true
-  follow_subdomains: false
+  follow_subdomains: false   # exception: documents www links to on docs.* (below)
   max_depth_from_registry_entry: 2
-  respect_robots_txt: true
+  # false since 2026-09-30 (DECISIONS.md INGEST-002, update). VNRVJIET IT cannot
+  # change docs.vnrvjiet.ac.in's "Disallow: /", and the rulebooks, condonation
+  # forms and scholarship documents exist only there. Scope when false: only
+  # DOCUMENTS that www itself links to are fetched - the host is never crawled -
+  # plus /nirf2026patent. /api/ and /admin stay excluded either way.
+  # Read by ingestion/crawler/discover.py. Set true for strict compliance.
+  respect_robots_txt: false
   request_delay_seconds: 1.0
   user_agent: "VJLM-research-crawler (VNRVJIET academic project)"
 

@@ -1,0 +1,24 @@
+# VJLM runtime: the data pipeline, retrieval and the web app. CPU only.
+# (Training on a GPU uses requirements-train.txt instead.)
+#
+# After installing, the page renderer needs its browser - once per machine:
+#     python -m playwright install chromium
+# Without it every web page in the knowledge base is missing (INGEST-004).
+
+flask
+numpy
+pyyaml
+
+# ingestion: rendering the client-side site
+playwright
+beautifulsoup4
+lxml
+
+# extraction
+pypdf
+pypdfium2                # renders scanned pages for OCR
+rapidocr_onnxruntime     # OCR for image-only PDFs (INGEST-003)
+
+# retrieval
+fastembed                # bge-small-en-v1.5 on onnxruntime
+nltk                     # WordNet synonyms + OCR word repair

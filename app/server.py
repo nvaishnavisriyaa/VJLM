@@ -3,12 +3,13 @@
 Auth is a Phase-1 role simulation. The RBAC gate it feeds is real: retrieval
 filters by visibility/audience BEFORE anything reaches the prompt builder.
 """
-import json, os, sys, time, threading
+import json, os, re, sys, time, threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template, stream_with_context
+from rag.answer import attribute, with_supplement, used_from, rescue
 from rag.retrieve import Retriever, build_prompt
 from ingestion.refresh import Refresher
 
@@ -65,21 +66,74 @@ def reload_retriever():
 refresher = Refresher(on_index_rebuilt=reload_retriever)
 
 
+_SRC_START = re.compile(r"\n\s*Sources?\s*:", re.I)
+
+
+def safe_prefix_len(acc):
+    """How much of the streamed text can be shown without risking the start of
+    the model's own 'Source:' line (which is removed from the final answer)."""
+    m = _SRC_START.search(acc)
+    if m:
+        return m.start()
+    i = acc.rfind("\n")
+    if i != -1 and "source".startswith(acc[i + 1:].strip().lower()[:6]):
+        return i
+    return len(acc)
+
+
 LLAMA_URL = os.environ.get("VJLM_LLAMA_URL", "http://127.0.0.1:8080")
 
 
-def llama_chat(messages, max_tokens=420, temperature=0.2):
+# Sampling temperature. 0.2 reads better for a person; an accuracy run needs
+# the same answer every time, or a re-measurement shuffles one or two of 26
+# questions (3.8% each) and a real change cannot be told from the sampler.
+# Set VJLM_TEMP=0 for evaluation runs.
+TEMP = float(os.environ.get("VJLM_TEMP", "0.2"))
+SEED = int(os.environ.get("VJLM_SEED", "-1"))
+
+
+def llama_chat(messages, max_tokens=420, temperature=None):
     """Talk to a local llama-server (official build, ~39x faster than the
     generic llama-cpp-python wheel on this CPU - see QUANT/RUNTIME bench).
     Local HTTP to 127.0.0.1 is not an external API."""
     import urllib.request, urllib.error
     body = json.dumps({"messages": messages, "max_tokens": max_tokens,
-                       "temperature": temperature, "stream": False}).encode()
+                       "temperature": TEMP if temperature is None else temperature,
+                       "seed": SEED, "stream": False}).encode()
     req = urllib.request.Request(LLAMA_URL + "/v1/chat/completions", data=body,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
         d = json.loads(r.read())
     return d["choices"][0]["message"]["content"].strip()
+
+
+def llama_stream(messages, max_tokens=420, temperature=None):
+    """Yield answer text as llama-server produces it.
+
+    At the measured CPU rates (14.7 tok/s Llama, 8.07 Mistral) a non-streamed
+    answer is several seconds of blank screen, so the UI streams instead.
+    """
+    import urllib.request
+    body = json.dumps({"messages": messages, "max_tokens": max_tokens,
+                       "temperature": TEMP if temperature is None else temperature,
+                       "seed": SEED, "stream": True}).encode()
+    req = urllib.request.Request(LLAMA_URL + "/v1/chat/completions", data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                d = json.loads(payload)
+            except ValueError:
+                continue
+            piece = (d.get("choices") or [{}])[0].get("delta", {}).get("content")
+            if piece:
+                yield piece
 
 
 def llama_up():
@@ -91,121 +145,86 @@ def llama_up():
         return False
 
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<title>VJLM - Vignana Jyothi Language Model</title>
-<style>
-:root{--bg:#0e1420;--card:#172131;--line:#26344a;--fg:#e8eef7;--mut:#93a4bd;--ac:#5b9cf8;--ac2:#3ddc97}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,Segoe UI,sans-serif}
-header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-h1{font-size:17px;margin:0;letter-spacing:.3px}
-h1 span{color:var(--mut);font-weight:400}
-.badge{font-size:11px;padding:3px 9px;border-radius:99px;background:#1d2b40;color:var(--ac2);border:1px solid var(--line)}
-main{max-width:920px;margin:0 auto;padding:24px 16px 60px}
-.row{display:flex;gap:10px;flex-wrap:wrap}
-select,input,button{font:inherit;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:11px 13px}
-input{flex:1;min-width:240px}
-button{background:var(--ac);border-color:var(--ac);color:#04101f;font-weight:600;cursor:pointer;padding:11px 20px}
-button:disabled{opacity:.5;cursor:default}
-.ans{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;white-space:pre-wrap}
-.cites{margin-top:16px}
-.c{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:9px;padding:11px 14px;margin-bottom:9px;font-size:13px}
-.c a{color:var(--ac);text-decoration:none;word-break:break-all}
-.c .m{color:var(--mut);font-size:12px;margin-top:4px}
-.ex{color:var(--mut);font-size:13px;margin-top:14px}
-.ex b{color:var(--fg);font-weight:500;cursor:pointer;border-bottom:1px dotted var(--mut)}
-.sp{color:var(--mut);font-size:13px;margin-top:18px}
-.badge.live{cursor:pointer}
-.badge.work{color:#ffc86b;border-color:#5a4520}
-.badge.err{color:#ff9b9b;border-color:#5a2020}
-.dot{display:inline-block;width:6px;height:6px;border-radius:99px;background:currentColor;
-     margin-right:6px;vertical-align:middle}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-.badge.work .dot{animation:pulse 1.1s ease-in-out infinite}
-</style></head><body>
-<header>
-  <h1>VJLM <span>Vignana Jyothi Language Model</span></h1>
-  <span class="badge" id="mode">loading…</span>
-  <span class="badge live" id="sync" title="Click to refresh the knowledge base now">…</span>
-  <span class="badge">local CPU · no external API</span>
-</header>
-<main>
-  <div class="row">
-    <select id="role"><option value="student">Student</option><option value="faculty">Faculty</option></select>
-    <input id="q" placeholder="Ask about regulations, calendar, placements, departments…"
-           onkeydown="if(event.key==='Enter')go()">
-    <button id="b" onclick="go()">Ask</button>
-  </div>
-  <div class="ex">Try:
-    <b onclick="set(this)">What is the attendance requirement?</b> ·
-    <b onclick="set(this)">Which regulation applies to third year B.Tech?</b> ·
-    <b onclick="set(this)">What are the placement statistics?</b> ·
-    <b onclick="set(this)">What are my internal marks?</b>
-  </div>
-  <div id="out"></div>
-</main>
-<script>
-// The refresh runs in the background from app start. Poll so the badge shows
-// what it is doing rather than the pipeline being invisible.
-const PHASE={idle:'knowledge base current',discovering:'finding new documents',
-  fetching:'checking sources',extracting:'reading documents',enriching:'tagging',
-  indexing:'rebuilding index',reloading:'applying update',
-  error:'refresh failed',disabled:'auto-refresh off'};
-function ago(t){if(!t)return'';const s=Date.now()/1000-t;
-  if(s<90)return'just now';if(s<5400)return Math.round(s/60)+'m ago';
-  if(s<172800)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';}
-async function poll(){
-  try{
-    const s=await (await fetch('/api/status')).json();
-    document.getElementById('mode').textContent =
-      s.model ? (s.kind+' · '+s.chunks.toLocaleString()+' chunks') : 'retrieval only';
-    const r=s.refresh||{}, b=document.getElementById('sync');
-    const busy=r.running&&r.phase!=='idle', err=r.phase==='error';
-    b.className='badge live'+(busy?' work':'')+(err?' err':'');
-    let txt=PHASE[r.phase]||r.phase||'';
-    if(busy&&r.detail)txt=r.detail;
-    else if(r.phase==='idle')txt=(r.due_now?r.due_now+' source(s) due':'up to date')
-      +(r.last_cycle?' · '+ago(r.last_cycle):'');
-    b.innerHTML='<span class="dot"></span>'+txt;
-    b.title=err?(r.error||'refresh failed'):'Click to refresh the knowledge base now';
-    // poll faster while work is happening so the UI tracks it
-    setTimeout(poll, busy?1500:15000);
-  }catch(e){setTimeout(poll,15000);}
-}
-poll();
-document.getElementById('sync').onclick=()=>{
-  fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({})}).then(()=>setTimeout(poll,300));
-};
-function set(e){document.getElementById('q').value=e.textContent;go()}
-async function go(){
-  const q=document.getElementById('q').value.trim(); if(!q)return;
-  const role=document.getElementById('role').value;
-  const b=document.getElementById('b'); b.disabled=true; b.textContent='…';
-  document.getElementById('out').innerHTML='<div class="sp">Retrieving and generating on CPU…</div>';
-  try{
-    const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({q,role})});
-    const d=await r.json();
-    let h='<div class="ans">'+esc(d.answer)+'</div>';
-    if(d.citations.length){
-      h+='<div class="cites">';
-      d.citations.forEach((c,i)=>{h+='<div class="c">['+(i+1)+'] <a href="'+c.url+'" target="_blank">'
-        +c.url.split('/').pop()+'</a><div class="m">page '+c.page+' · '+c.category+' · score '+c.score+'</div></div>';});
-      h+='</div>';
-    }
-    h+='<div class="sp">retrieved in '+d.t_retrieve+'s · generated in '+d.t_gen+'s</div>';
-    document.getElementById('out').innerHTML=h;
-  }catch(e){document.getElementById('out').innerHTML='<div class="ans">Error: '+e+'</div>';}
-  b.disabled=false; b.textContent='Ask';
-}
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-</script></body></html>"""
+# The page lives in app/templates/index.html with app/static/{app.css,app.js}.
 
 
 @app.route("/")
 def index():
-    return Response(PAGE, mimetype="text/html")
+    return render_template("index.html")
+
+
+# Kept in sync with rag/retrieve.py WEIGHTS. An unlisted mode silently
+# falls back to "hybrid", which would make a comparison look like it ran
+# when it did not.
+VALID_MODES = ("hybrid", "bm25", "dense", "coverage", "lexical", "hybrid3")
+ABSTAIN = "I could not find this in the available VNRVJIET sources."
+
+
+# Conversation is not a question. Without this, "hi" went to retrieval as a
+# search query, came back with five irrelevant passages (a newsletter matching
+# "hi"), and the fine-tuned model correctly refused - a right answer to a
+# question nobody asked. Greetings, thanks and "what are you" get a direct
+# reply: no retrieval, no sources, no model call.
+_ABOUT = ("I'm VJLM (Vignana Jyothi Language Model), a Llama-3.2-3B model fine-tuned "
+          "for VNRVJIET and running entirely on this computer's CPU, with no external AI "
+          "service. I answer from documents the college publishes on its website: "
+          "academic regulations, academic calendars, syllabi, notices and circulars, "
+          "admissions and fees, and department, faculty and placement pages. Every "
+          "answer cites its source, and if the documents don't contain the answer I "
+          "say so instead of guessing.")
+_TOPICS = ("academic regulations, the academic calendar, admissions and fees, "
+           "syllabus, departments and faculty, placements, or campus life")
+_SMALL_TALK = [
+    (re.compile(r"^(hi+|hello+|hey+|hai|namaste|greetings|good\s+(morning|afternoon|evening))"
+                r"(\s+(vjlm|there|bro|sir|madam|all))?[\s!.,?]*$", re.I),
+     "Hi! I'm VJLM, VNRVJIET's campus assistant. Ask me about %s, and I'll answer "
+     "from the college's own published documents, with the source for every answer." % _TOPICS),
+    (re.compile(r"^(thanks?(\s+you)?|thank\s+you(\s+so\s+much)?|thx|ty|ok(ay)?|cool|great|nice|"
+                r"got\s+it|bye|goodbye|see\s+you)[\s!.,?]*$", re.I),
+     "You're welcome! Ask me anything else about VNRVJIET: %s." % _TOPICS),
+    (re.compile(r"^((who|what)\s+(are|r)\s+(you|u)|what\s+(is|'s)\s+vjlm|what\s+can\s+you\s+do|"
+                r"how\s+can\s+you\s+help(\s+me)?|help)[\s!.,?]*$", re.I),
+     _ABOUT),
+]
+
+
+def small_talk(q):
+    for pattern, reply in _SMALL_TALK:
+        if pattern.match(q.strip()):
+            return reply
+    return None
+
+
+def read_query(body):
+    """Normalise the request. Unknown roles and modes fall back rather than
+    erroring - the role also drives RBAC, so it must never be attacker-chosen
+    into an unmapped value."""
+    q = (body.get("q") or "").strip()
+    role = body.get("role", "student")
+    if role not in ("student", "faculty"):
+        role = "student"
+    mode = body.get("mode", "hybrid")
+    if mode not in VALID_MODES:
+        mode = "hybrid"
+    return q, role, mode
+
+
+def cite_payload(chunks):
+    """Citation metadata plus a redacted preview, so a claim can be checked in
+    the UI without opening the source PDF. redact() keeps emails and phone
+    numbers out of the response exactly as it does out of the prompt."""
+    from preprocessing.enrich import redact
+    out = []
+    for c in chunks:
+        out.append({
+            "url": c["url"], "page": c["page"], "category": c.get("category"),
+            "score": c.get("score"), "published": c.get("published"),
+            "department": c.get("department"),
+            "regulation": c.get("regulation"),
+            "academic_year": c.get("academic_year"),
+            "snippet": redact(c["text"][:600]),
+        })
+    return out
 
 
 @app.route("/api/status")
@@ -231,11 +250,14 @@ def refresh_now():
 
 @app.route("/api/ask", methods=["POST"])
 def ask():
-    body = request.get_json(force=True)
-    q = (body.get("q") or "").strip()
-    role = body.get("role", "student")
-    if role not in ("student", "faculty"):
-        role = "student"
+    """Non-streaming answer. Kept alongside /api/ask/stream for scripted callers
+    and for anything that cannot consume SSE."""
+    q, role, mode = read_query(request.get_json(force=True))
+
+    reply = small_talk(q)
+    if reply:
+        return jsonify({"answer": reply, "citations": [], "t_retrieve": 0.0,
+                        "t_gen": 0.0, "mode": "conversation"})
 
     ret = get_retriever()
     if ret is None:
@@ -243,15 +265,15 @@ def ask():
         return jsonify({"answer": "The knowledge base is still being built (%s). "
                                   "This runs automatically - try again shortly."
                                   % (st.get("detail") or st.get("phase")),
-                        "citations": [], "t_retrieve": 0.0, "t_gen": 0.0})
+                        "citations": [], "t_retrieve": 0.0, "t_gen": 0.0, "mode": mode})
 
     t0 = time.time()
-    chunks = ret.search(q, role=role, topk=5)
+    chunks = ret.search(q, role=role, topk=5, mode=mode)
     t_ret = round(time.time() - t0, 2)
 
     if not chunks:
-        return jsonify({"answer": "I could not find this in the available VNRVJIET sources.",
-                        "citations": [], "t_retrieve": t_ret, "t_gen": 0.0})
+        return jsonify({"answer": ABSTAIN, "citations": [],
+                        "t_retrieve": t_ret, "t_gen": 0.0, "mode": mode})
 
     msgs = build_prompt(q, chunks, role)
     t1 = time.time()
@@ -264,12 +286,114 @@ def ask():
                       + chunks[0]["text"][:700])
     t_gen = round(time.time() - t1, 2)
 
-    return jsonify({
-        "answer": answer,
-        "citations": [{"url": c["url"], "page": c["page"], "category": c["category"],
-                       "score": c["score"]} for c in chunks],
-        "t_retrieve": t_ret, "t_gen": t_gen,
-    })
+    # Refusing when the answer was retrieved is the worst failure we can make,
+    # so a passage that plainly answers overrides the model's refusal (APP-003).
+    if "could not find this" in answer.lower():
+        answer = rescue(q, chunks, ret.bm25.idf) or answer
+
+    # Citations are computed from the text, not taken from the model (APP-002).
+    answer, used, unsupported = attribute(answer, chunks)
+
+    # Nothing in the answer came from any retrieved passage. The model
+    # sometimes returns only its trained-in hedge ("confirm which regulation
+    # batch applies ... provisions differ across regulation versions"), which
+    # answers nothing and is phrased differently every time, so it is caught
+    # here by what it lacks - support - rather than by matching its wording.
+    if not used and "could not find this" not in answer.lower():
+        alt = rescue(q, chunks, ret.bm25.idf)
+        if alt:
+            answer, used, unsupported = attribute(alt, chunks)
+    answer = with_supplement(q, answer, chunks, ret.bm25.idf)
+    used = used_from(answer, len(chunks))
+    return jsonify({"answer": answer, "citations": cite_payload(chunks),
+                    "used": used, "unsupported": unsupported,
+                    "t_retrieve": t_ret, "t_gen": t_gen, "mode": mode})
+
+
+@app.route("/api/ask/stream", methods=["POST"])
+def ask_stream():
+    """Server-sent events: 'meta' (citations, retrieval time) once retrieval is
+    done, then a 'token' per piece of generated text, then 'done' with timings.
+    Citations are sent before the answer so a claim can be checked as it lands."""
+    q, role, mode = read_query(request.get_json(force=True))
+
+    def sse(event, obj):
+        return "event: %s\ndata: %s\n\n" % (event, json.dumps(obj))
+
+    def gen():
+        reply = small_talk(q)
+        if reply:
+            yield sse("meta", {"citations": [], "t_retrieve": 0.0, "mode": "conversation"})
+            yield sse("token", {"t": reply})
+            yield sse("done", {"t_gen": 0.0, "tok_s": None})
+            return
+        ret = get_retriever()
+        if ret is None:
+            st = refresher.status()
+            yield sse("meta", {"citations": [], "t_retrieve": 0.0, "mode": mode})
+            yield sse("token", {"t": "The knowledge base is still being built (%s). "
+                                     "This runs automatically - try again shortly."
+                                     % (st.get("detail") or st.get("phase"))})
+            yield sse("done", {"t_gen": 0.0, "tok_s": None})
+            return
+
+        t0 = time.time()
+        chunks = ret.search(q, role=role, topk=5, mode=mode)
+        t_ret = round(time.time() - t0, 2)
+
+        if not chunks:
+            yield sse("meta", {"citations": [], "t_retrieve": t_ret, "mode": mode})
+            yield sse("token", {"t": ABSTAIN})
+            yield sse("done", {"t_gen": 0.0, "tok_s": None})
+            return
+
+        yield sse("meta", {"citations": cite_payload(chunks),
+                           "t_retrieve": t_ret, "mode": mode})
+
+        msgs = build_prompt(q, chunks, role)
+        t1 = time.time()
+        pieces = 0
+        # One llama-server, one generation at a time - the lock is what keeps a
+        # second request from interleaving tokens into this stream.
+        with _lock:
+            if not llama_up():
+                yield sse("token", {"t": "(llama-server is not running - retrieval only.)"
+                                         "\n\nStart it with runtime/start_llama.cmd"
+                                         "\n\nMost relevant passage:\n\n"
+                                         + chunks[0]["text"][:700]})
+            else:
+                try:
+                    acc, sent = "", 0
+                    for piece in llama_stream(msgs):
+                        pieces += 1
+                        acc += piece
+                        # Hold back anything that is, or may become, the model's
+                        # own "Source:" line - it is replaced by computed
+                        # attribution at the end (APP-002).
+                        safe = safe_prefix_len(acc)
+                        if safe > sent:
+                            yield sse("token", {"t": acc[sent:safe]})
+                            sent = safe
+                    if "could not find this" in acc.lower():
+                        acc = rescue(q, chunks, ret.bm25.idf) or acc
+                    final, used, unsupported = attribute(acc, chunks)
+                    if not used and "could not find this" not in final.lower():
+                        alt = rescue(q, chunks, ret.bm25.idf)
+                        if alt:
+                            final, used, unsupported = attribute(alt, chunks)
+                    final = with_supplement(q, final, chunks, ret.bm25.idf)
+                    used = used_from(final, len(chunks))
+                    yield sse("final", {"text": final, "used": used,
+                                        "unsupported": unsupported})
+                except Exception as e:
+                    yield sse("error", {"message": "generation failed: %s" % e})
+
+        dt = time.time() - t1
+        yield sse("done", {"t_gen": round(dt, 2),
+                           "tok_s": round(pieces / dt, 1) if pieces and dt > 0 else None})
+
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 if __name__ == "__main__":

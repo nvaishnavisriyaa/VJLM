@@ -74,3 +74,15 @@ models/**/scheduler.pt
 # quantization/builds.json, not the live log.
 quantization/quant_matrix.log
 quantization/quant_status.json
+
+# Extracted corpus - regenerable pipeline output (preprocessing/extract.py,
+# preprocessing/enrich.py) that grows with every crawl. It passed GitHub's
+# 100MB per-file limit as the crawl expanded (15MB when last committed,
+# 119MB and 123MB now), so it is rebuilt rather than versioned.
+preprocessing/out/rag_chunks.jsonl
+preprocessing/out/rag_chunks_enriched.jsonl
+
+# Session scratch logs from background runs, not recorded evidence
+experiments/_*.log
+experiments/_*.json
+experiments/_*.py

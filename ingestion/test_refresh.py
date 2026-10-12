@@ -252,7 +252,7 @@ def main():
             prev = {"source_id": "unreachable", "url": "http://127.0.0.1:9/x",
                     "snapshot": "unreachable.html", "content_hash": "GOOD",
                     "bytes": 5000, "status": "new", "document_version": 3}
-            out = R2.render_all([{"source_id": "unreachable",
+            out, _links = R2.render_all([{"source_id": "unreachable",
                                   "canonical_url": "http://127.0.0.1:9/x"}],
                                 {"unreachable": prev}, delay=0)
             r = out["unreachable"]

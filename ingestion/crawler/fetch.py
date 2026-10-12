@@ -6,6 +6,8 @@ last-known-good state. Stdlib only.
 """
 import argparse, concurrent.futures as cf, hashlib, json, os, re, sys, csv, time
 import urllib.request, urllib.error
+from email.utils import parsedate_to_datetime
+from urllib.parse import quote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOG = os.path.join(ROOT, "data_catalog", "catalog.csv")
@@ -19,6 +21,10 @@ UA = "VJLM-research-crawler (VNRVJIET academic project)"
 # infrastructure, so the default is deliberately conservative.
 WORKERS, DELAY = 4, 1.0
 
+# The file signature each document type must start with. .docx/.xlsx are zip
+# containers, hence PK.
+DOC_MAGIC = {"pdf": b"%PDF", "docx": b"PK", "xlsx": b"PK"}
+
 def load_state():
     if os.path.exists(STATE):
         with open(STATE, encoding="utf-8") as f:
@@ -30,10 +36,32 @@ def norm_hash(data, kind):
     content. For HTML we would strip markup first (done at extract stage)."""
     return hashlib.sha256(data).hexdigest()
 
+def http_date(value):
+    """'Thu, 20 Aug 2026 08:14:28 GMT' -> '2026-08-20', or None.
+
+    When two documents contradict each other, the newest one wins, and this
+    is the date that decides it. It is the only publication date we get: the
+    crawl timestamps say when WE fetched a file, and a PDF's own /CreationDate
+    is when its Word original was authored, which can be years before the
+    college actually published it - the fee-payment guidelines were written
+    2024-08-06 and put on the site 2026-08-20. Not every server sends the
+    header, so the value is optional everywhere it is used.
+    """
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_one(row, state):
     url, sid = row["canonical_url"], row["source_id"]
     prev = state.get(sid, {})
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    # Catalog URLs are stored decoded; filenames on docs.* contain spaces,
+    # which an HTTP request line cannot carry.
+    req = urllib.request.Request(quote(url, safe=":/?&=%#@!$'()*+,;~"),
+                                 headers={"User-Agent": UA})
     if prev.get("etag"):
         req.add_header("If-None-Match", prev["etag"])
     try:
@@ -41,6 +69,7 @@ def fetch_one(row, state):
         with urllib.request.urlopen(req, timeout=60) as r:
             data = r.read()
             etag = r.headers.get("ETag")
+            modified = http_date(r.headers.get("Last-Modified"))
     except urllib.error.HTTPError as e:
         if e.code == 304:
             return sid, dict(prev, status="unchanged", last_seen=time.time())
@@ -50,14 +79,25 @@ def fetch_one(row, state):
 
     h = norm_hash(data, row["document_type"])
     if h == prev.get("content_hash"):
-        return sid, dict(prev, status="unchanged", last_seen=time.time(), etag=etag or prev.get("etag"))
+        return sid, dict(prev, status="unchanged", last_seen=time.time(),
+                         etag=etag or prev.get("etag"),
+                         last_modified=modified or prev.get("last_modified"))
 
-    path = os.path.join(SNAP, sid + (".pdf" if row["document_type"] == "pdf" else ".html"))
+    # A document URL that answers with HTML is not the document - it is the
+    # SPA shell or an error page served with 200. Storing it would replace the
+    # last good copy with junk, so it is a failed fetch, not a change.
+    kind = row["document_type"]
+    magic = DOC_MAGIC.get(kind)
+    if magic and not data.startswith(magic):
+        return sid, dict(prev, status="error", last_seen=time.time(),
+                         last_error="not a %s (got %r)" % (kind, data[:15]))
+
+    path = os.path.join(SNAP, sid + "." + kind)
     with open(path, "wb") as f:
         f.write(data)
     return sid, {
         "source_id": sid, "url": url, "snapshot": os.path.basename(path),
-        "content_hash": h, "etag": etag, "bytes": len(data),
+        "content_hash": h, "etag": etag, "last_modified": modified, "bytes": len(data),
         "status": "new" if not prev else "changed",
         "last_seen": time.time(), "last_success": time.time(),
         "document_version": prev.get("document_version", 0) + 1, "last_error": None,
@@ -76,7 +116,12 @@ def main():
     os.makedirs(SNAP, exist_ok=True); os.makedirs(os.path.dirname(STATE), exist_ok=True)
     with open(CATALOG, encoding="utf-8") as f:
         all_rows = list(csv.DictReader(f))
-    rows = all_rows
+    # Pages never go through this stage. The site renders client-side, so
+    # plain HTTP returns the same 4 KB shell for every route, and writing that
+    # shell over a rendered snapshot is exactly how all 106 pages were replaced
+    # by meta tags on 2026-09-30 (INGEST-004). Pages belong to render.py; this
+    # stage fetches documents, whoever calls it and with whatever id list.
+    rows = [r for r in all_rows if r["document_type"] != "html"]
     if a.type:
         rows = [r for r in rows if r["document_type"] == a.type]
     if a.only_ids:
