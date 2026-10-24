@@ -15,8 +15,9 @@ import hashlib, json, os, re, sys
 from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHUNKS = os.path.join(ROOT, "preprocessing", "out", "rag_chunks.jsonl")
-OUT = os.path.join(ROOT, "preprocessing", "out", "rag_chunks_enriched.jsonl")
+_OUT_DIR = os.environ.get("VJLM_OUT_DIR") or os.path.join(ROOT, "preprocessing", "out")
+CHUNKS = os.path.join(_OUT_DIR, "rag_chunks.jsonl")
+OUT = os.path.join(_OUT_DIR, "rag_chunks_enriched.jsonl")
 
 DEPARTMENTS = {
     "cse-aiml": ["cse-aiml", "cse_aiml", "aiml", "artificial intelligence and machine learning"],

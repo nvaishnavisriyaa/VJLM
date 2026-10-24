@@ -11,7 +11,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAP = os.path.join(ROOT, "ingestion", "snapshots")
 STATE = os.path.join(ROOT, "ingestion", "state", "sync_state.json")
 CATALOG = os.path.join(ROOT, "data_catalog", "catalog.csv")
-OUT = os.path.join(ROOT, "preprocessing", "out")
+# VJLM_OUT_DIR lets a candidate knowledge base be built beside the live one
+OUT = os.environ.get("VJLM_OUT_DIR") or os.path.join(ROOT, "preprocessing", "out")
 MIN_CHARS, MAX_CHARS, OVERLAP = 200, 1100, 150
 
 # OCR budget per run, seconds. docs.* is 60% scans at ~7 pages each - about
@@ -22,6 +23,8 @@ MIN_CHARS, MAX_CHARS, OVERLAP = 200, 1100, 150
 # while one exists). Cached scans cost nothing and never count against it.
 OCR_BUDGET_S = float(os.environ.get("VJLM_OCR_BUDGET_S", "1200"))
 OCR_BACKLOG = os.path.join(OUT, "ocr_backlog.json")
+# A document slower than this names itself in the log (see the main loop).
+SLOW_DOC_S = float(os.environ.get("VJLM_SLOW_DOC_S", "20"))
 # {source_id: content_hash of the snapshot it was last extracted from}. Written
 # for every source extraction finished with - text, empty, or unrendered shell -
 # and never for a failure or a deferral, which must be tried again. It is what
@@ -39,6 +42,41 @@ def normalize(t):
     t = re.sub(r"(?m)^\s*Page \d+ of \d+\s*$", "", t)
     return t.strip()
 
+_SENT_END = re.compile(r"(?<=[.!?:;])\s|\n")
+
+
+def _split_long(p, max_c, ov):
+    """One over-long paragraph -> pieces, cut at sentence ends, nothing dropped.
+
+    The old version sliced at fixed offsets - `range(0, len(p), max_c - ov)` -
+    which cut mid-sentence and often mid-word, and whose final slice was
+    frequently shorter than MIN_CHARS and so was silently discarded by the
+    filter in chunk(). A 2050-character paragraph lost its last 150 characters
+    outright. PDF extraction produces exactly these: a whole regulation clause
+    or a whole table arrives as one paragraph.
+
+    Cuts at the last sentence boundary before the limit, falls back to the last
+    space, and merges a runt tail into the piece before it so no text is ever
+    thrown away.
+    """
+    out, i = [], 0
+    while i < len(p):
+        if len(p) - i <= max_c:
+            out.append(p[i:])
+            break
+        window = p[i:i + max_c]
+        cuts = [m.start() for m in _SENT_END.finditer(window)]
+        cut = cuts[-1] if cuts and cuts[-1] >= max_c // 3 else window.rfind(" ")
+        if cut <= 0:
+            cut = max_c                     # one unbroken token: hard cut
+        out.append(p[i:i + cut].strip())
+        i += max(cut - ov, 1)
+    if len(out) > 1 and len(out[-1]) < MIN_CHARS:
+        out[-2] = out[-2] + " " + out[-1]   # never drop the tail
+        out.pop()
+    return [c for c in out if c]
+
+
 def chunk(text, max_c=MAX_CHARS, ov=OVERLAP):
     """Split on paragraph boundaries, pack up to max_c, overlap for context."""
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -49,8 +87,7 @@ def chunk(text, max_c=MAX_CHARS, ov=OVERLAP):
         else:
             if cur: out.append(cur)
             if len(p) > max_c:
-                for i in range(0, len(p), max_c - ov):
-                    out.append(p[i:i + max_c])
+                out.extend(_split_long(p, max_c, ov))
                 cur = ""
             else:
                 cur = p
@@ -187,11 +224,20 @@ def extract_one(sid, st, meta, boiler=frozenset()):
     if len(normalize("\n\n".join(t for _, t in pages))) < MIN_CHARS:
         return [], "empty"
     out = []
-    for pno, ptext in pages:
-        ptext = normalize(ptext)
-        if len(ptext) < MIN_CHARS:
-            continue
-        for ci, c in enumerate(chunk(ptext)):
+    pages = [(pno, normalize(t)) for pno, t in pages]
+    is_html = path.endswith(".html")
+    try:
+        from preprocessing.chunker import chunk_document, doc_title
+        pieces = chunk_document(pages, doc_title(st["url"], pages, is_html), is_html)
+    except Exception:
+        pieces = []
+    if not pieces:
+        # the structural chunker found nothing usable: fall back to plain windows
+        pieces = [{"page": pno, "context": "", "text": c}
+                  for pno, t in pages if len(t) >= MIN_CHARS for c in chunk(t)]
+    for ci, pc in enumerate(pieces):
+        pno, c = pc["page"], pc["text"]
+        if True:
             out.append({
                 "chunk_id": hashlib.sha1(f"{sid}:{pno}:{ci}".encode()).hexdigest()[:16],
                 "source_id": sid, "url": st["url"],
@@ -199,6 +245,9 @@ def extract_one(sid, st, meta, boiler=frozenset()):
                 "document_type": m.get("document_type", "pdf"),
                 "visibility": m.get("visibility", "PUBLIC"),
                 "audience": m.get("audience", "student|faculty"),
+                # `context` = document > section > sub-section. Indexed WITH the text
+                # for retrieval, never shown to the model (preprocessing/chunker.py).
+                "context": pc["context"],
                 "page": pno, "text": c,
                 # Which snapshot these chunks were made from. Lets every run
                 # prove the knowledge base matches what was last fetched.
@@ -278,7 +327,16 @@ def main():
     empty, fresh = [], []
     items = sorted(targets)
     for i, sid in enumerate(items):
+        # Which document, and how long it took. A full run once sat for 13 hours
+        # with the progress line only printed every 100 documents, so there was
+        # no way to tell a slow run from a stuck one. Anything over SLOW_DOC_S
+        # names itself, which turns "the pipeline hangs" into "this document
+        # hangs" without flooding an unattended run.
+        _t_doc = time.time()
         rows, status = extract_one(sid, state[sid], meta, boiler)
+        _el = time.time() - _t_doc
+        if _el >= SLOW_DOC_S:
+            print("  SLOW %5.0fs %-10s %s" % (_el, status, sid), flush=True)
         if status in ("ok", "empty", "shell"):
             processed[sid] = state[sid].get("content_hash")
         if status == "deferred":
@@ -296,7 +354,7 @@ def main():
             ndocs += 1
             fresh.extend(rows)
             nchunks += len(rows)
-        if (i + 1) % 100 == 0:
+        if (i + 1) % 25 == 0:
             print(f"  {i+1}/{len(items)} docs, {nchunks} chunks", flush=True)
 
     with open(chunks_path, "w", encoding="utf-8") as f:

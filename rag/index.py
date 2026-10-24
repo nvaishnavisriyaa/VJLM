@@ -8,8 +8,8 @@ import argparse, hashlib, json, math, os, pickle, re, sys, time
 from collections import Counter, defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHUNKS = os.path.join(ROOT, "preprocessing", "out", "rag_chunks.jsonl")
-IDX = os.path.join(ROOT, "rag", "index")
+CHUNKS = os.path.join(os.environ.get("VJLM_OUT_DIR") or os.path.join(ROOT, "preprocessing", "out"), "rag_chunks.jsonl")
+IDX = os.environ.get("VJLM_INDEX_DIR") or os.path.join(ROOT, "rag", "index")
 STOP = set("a an the of and or to in for on at by is are was were be been with as from this that it its "
            "shall will may can not no if then than which who whom what when where how".split())
 
@@ -59,6 +59,16 @@ CACHE = os.path.join(IDX, "dense_cache.npz")
 CHECKPOINT_EVERY = 2000
 
 
+def index_text(row):
+    """What retrieval sees for a chunk: its heading path, then its text.
+
+    The model is shown row["text"] alone (preprocessing/chunker.py); keyword,
+    synonym and embedding scoring all see the heading words too, so a clause
+    like "35% marks in the SEE" is findable by "minimum academic requirements"."""
+    c = row.get("context")
+    return (c + chr(10) + row["text"]) if c else row["text"]
+
+
 def vector_key(text):
     """Cache key for an embedding: a hash of the TEXT.
 
@@ -98,12 +108,12 @@ def build_dense(rows, threads=0):
         cache = {str(k): vecs[i] for i, k in enumerate(ids)}
         print(f"  cache: {len(cache)} vectors already embedded")
 
-    keys = [vector_key(r["text"]) for r in rows]
+    keys = [vector_key(index_text(r)) for r in rows]
     todo, seen = [], set()
     for r, k in zip(rows, keys):
         if k not in cache and k not in seen:
             seen.add(k)
-            todo.append((k, r["text"]))
+            todo.append((k, index_text(r)))
     print(f"  to embed: {len(todo)} new of {len(rows)} chunks "
           f"({len(set(keys))} distinct texts)")
 
@@ -156,7 +166,7 @@ def main():
     os.makedirs(IDX, exist_ok=True)
     rows = [json.loads(l) for l in open(CHUNKS, encoding="utf-8")]
     print(f"loaded {len(rows)} chunks")
-    texts = [r["text"] for r in rows]
+    texts = [index_text(r) for r in rows]
 
     print("building BM25 ...", flush=True)
     t0 = time.time()

@@ -75,14 +75,25 @@ models/**/scheduler.pt
 quantization/quant_matrix.log
 quantization/quant_status.json
 
-# Extracted corpus - regenerable pipeline output (preprocessing/extract.py,
-# preprocessing/enrich.py) that grows with every crawl. It passed GitHub's
-# 100MB per-file limit as the crawl expanded (15MB when last committed,
-# 119MB and 123MB now), so it is rebuilt rather than versioned.
+# Extracted corpus - the knowledge base itself. Uncompressed it is 125MB and
+# 129MB, past GitHub's 100MB per-file limit, so the working copies stay ignored
+# and the gzipped pair is versioned instead (~28MB each; chunk records are
+# repetitive JSON and compress to 22%). A clone restores them with
+# preprocessing/restore_corpus.py.
 preprocessing/out/rag_chunks.jsonl
 preprocessing/out/rag_chunks_enriched.jsonl
+!preprocessing/out/rag_chunks.jsonl.gz
+!preprocessing/out/rag_chunks_enriched.jsonl.gz
+
+# Structural-chunking experiment (chunker.py). Measured and not adopted - worse
+# deeper (@20 80% vs 84%) - so its 231MB corpus and 205MB index are scratch.
+preprocessing/out_v2/**
+rag/index_v2/**
 
 # Session scratch logs from background runs, not recorded evidence
 experiments/_*.log
 experiments/_*.json
 experiments/_*.py
+
+# Server logs from detached runs
+logs/
