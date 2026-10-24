@@ -1,0 +1,1672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VJLM Project Report</title>
+<style>
+  @page { size: A4; margin: 21mm 19mm 20mm 19mm; }
+  html { font-size: 10.6pt; }
+  body { font-family: "Georgia", "Cambria", serif; color: #1a1a1a; line-height: 1.52;
+         margin: 0; text-align: left; }
+  h1, h2, h3, h4 { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+                   color: #10243d; line-height: 1.25; }
+  h1 { font-size: 19pt; margin: 0 0 2mm; }
+  h2 { font-size: 14.2pt; margin: 9mm 0 3mm; padding-bottom: 1.6mm;
+       border-bottom: 0.9pt solid #c3cfdb; break-after: avoid; }
+  h3 { font-size: 11.6pt; margin: 6mm 0 2mm; break-after: avoid; }
+  h4 { font-size: 10.4pt; margin: 4.5mm 0 1.5mm; color: #33475e; break-after: avoid; }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3.4mm; padding-left: 6.5mm; }
+  li { margin-bottom: 1.5mm; }
+  table { border-collapse: collapse; width: 100%; margin: 3.5mm 0 4.5mm;
+          font-family: "Segoe UI", Arial, sans-serif; font-size: 8.9pt; break-inside: avoid; }
+  th { background: #10243d; color: #fff; text-align: left; padding: 1.7mm 2.4mm;
+       font-weight: 600; }
+  td { border-bottom: 0.5pt solid #d5dde6; padding: 1.6mm 2.4mm; vertical-align: top; }
+  tr:nth-child(even) td { background: #f5f8fb; }
+  code { font-family: "Consolas", "Courier New", monospace; font-size: 0.88em;
+         background: #eef2f6; padding: 0.3mm 1mm; border-radius: 1.5px; }
+  .cover { height: 232mm; display: flex; flex-direction: column; justify-content: center; }
+  .cover h1 { font-size: 30pt; letter-spacing: -0.4pt; margin-bottom: 4mm; }
+  .cover .sub { font-size: 13pt; color: #33475e; margin-bottom: 14mm; line-height: 1.45; }
+  .cover .meta { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.6pt;
+                 color: #4a5a6e; border-top: 1.4pt solid #10243d; padding-top: 4mm; }
+  .cover .meta b { color: #10243d; }
+  .sec { break-before: page; }
+  .lead { font-size: 11.4pt; color: #28364a; border-left: 2.6pt solid #10243d;
+          padding: 0 0 0 4mm; margin: 0 0 5mm; }
+  .box { background: #f5f8fb; border-left: 2.6pt solid #4a6fa5; padding: 3mm 4mm;
+         margin: 4mm 0; break-inside: avoid; }
+  .box.warn { background: #fdf6ec; border-left-color: #c08a2e; }
+  .box.bad  { background: #fcf0f0; border-left-color: #b4544e; }
+  .box p:last-child { margin-bottom: 0; }
+  .kicker { font-family: "Segoe UI", Arial, sans-serif; font-size: 8.2pt;
+            text-transform: uppercase; letter-spacing: 0.9pt; color: #6b7c91;
+            margin: 0 0 1.5mm; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .win { color: #1f6b43; font-weight: 600; }
+  .loss { color: #a8433d; font-weight: 600; }
+  figure { margin: 4mm 0; break-inside: avoid; }
+  figcaption { font-family: "Segoe UI", Arial, sans-serif; font-size: 8.3pt;
+               color: #5b6b80; margin-top: 1.6mm; }
+  .formula { font-family: "Cambria Math", "Georgia", serif; font-size: 11.6pt;
+             text-align: center; background: #f5f8fb; padding: 4mm 3mm; margin: 4mm 0;
+             break-inside: avoid; }
+  .formula .frac { display: inline-block; vertical-align: middle; text-align: center; }
+  .formula .frac .top { display: block; border-bottom: 0.8pt solid #1a1a1a; padding: 0 2mm 0.6mm; }
+  .formula .frac .bot { display: block; padding: 0.6mm 2mm 0; }
+  .toc { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.6pt; }
+  .toc div { display: flex; justify-content: space-between; padding: 1.5mm 0;
+             border-bottom: 0.4pt dotted #c3cfdb; }
+  .toc .t { color: #10243d; }
+  .toc .n { color: #6b7c91; }
+  small { color: #5b6b80; }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <p class="kicker">Project Report &middot; B.Tech Major Project</p>
+  <h1>VJLM</h1>
+  <p class="sub">The Vignana Jyothi Language Model &mdash; a local, role-aware
+  assistant for VNR Vignana Jyothi Institute of Engineering &amp; Technology,
+  built end to end on commodity CPU hardware with no external language-model
+  service at runtime.</p>
+  <div class="meta">
+    <p><b>Author</b> &nbsp; Vaishnavi Sriyaa N</p>
+    <p><b>Repository</b> &nbsp; github.com/nvaishnavisriyaa/VJLM</p>
+    <p><b>Period covered</b> &nbsp; 16 September 2026 &ndash; 22 October 2026</p>
+    <p><b>Report date</b> &nbsp; 22 October 2026</p>
+  </div>
+</section>
+
+<!-- ============================== TOC ============================== -->
+<section class="sec">
+<h1>Contents</h1>
+<div class="toc">
+  <div><span class="t">1 &nbsp; What this project is, and what it refuses to do</span><span class="n">3</span></div>
+  <div><span class="t">2 &nbsp; Results, up front</span><span class="n">4</span></div>
+  <div><span class="t">3 &nbsp; Timeline at a glance</span><span class="n">6</span></div>
+  <div><span class="t">4 &nbsp; Foundation, reconnaissance and classification &mdash; 16 September</span><span class="n">7</span></div>
+  <div><span class="t">5 &nbsp; The dynamic data pipeline &mdash; 16&ndash;17 September</span><span class="n">9</span></div>
+  <div><span class="t">6 &nbsp; Extraction, chunking and enrichment</span><span class="n">12</span></div>
+  <div><span class="t">7 &nbsp; Three things that were silently broken &mdash; 30 September</span><span class="n">14</span></div>
+  <div><span class="t">8 &nbsp; The benchmark problem, and the similarity measure &mdash; 26 September</span><span class="n">17</span></div>
+  <div><span class="t">9 &nbsp; Fine-tuning: five configurations &mdash; 18&ndash;19 September</span><span class="n">20</span></div>
+  <div><span class="t">10 &nbsp; Compression for CPU &mdash; 21 September</span><span class="n">24</span></div>
+  <div><span class="t">11 &nbsp; Serving: authentication, prompt, interface</span><span class="n">27</span></div>
+  <div><span class="t">12 &nbsp; October: the honest re-measurement</span><span class="n">28</span></div>
+  <div><span class="t">13 &nbsp; The three-signal retrieval metric</span><span class="n">31</span></div>
+  <div><span class="t">14 &nbsp; The WordNet question, answered with numbers</span><span class="n">34</span></div>
+  <div><span class="t">15 &nbsp; Where the system stands &mdash; 22 October</span><span class="n">36</span></div>
+  <div><span class="t">16 &nbsp; What is not done</span><span class="n">38</span></div>
+  <div><span class="t">17 &nbsp; What the project taught about method</span><span class="n">40</span></div>
+  <div><span class="t">Appendix A &nbsp; Full dated timeline</span><span class="n">42</span></div>
+  <div><span class="t">Appendix B &nbsp; Every rejected experiment, with the number that killed it</span><span class="n">44</span></div>
+  <div><span class="t">Appendix C &nbsp; Repository map</span><span class="n">46</span></div>
+</div>
+</section>
+
+<!-- ============================== 1 ============================== -->
+<section class="sec">
+<h1>1 &nbsp; What this project is, and what it refuses to do</h1>
+
+<p class="lead">VJLM answers questions about VNRVJIET &mdash; attendance rules,
+examination regulations, fees, hostel policy, clubs, the academic calendar
+&mdash; from the institute's own published documents, on a laptop, with no
+internet call to any language-model provider at the moment a student asks.</p>
+
+<p>That last clause is the whole difficulty. It would be straightforward to
+point a hosted model at the college website and get good answers. Nearly every
+design decision in this report follows instead from a short list of things the
+project is not allowed to do, and the interesting parts are where those
+constraints forced a measurement that a looser project would never have made.</p>
+
+<h3>The constraints, and where they came from</h3>
+
+<p><b>No external language-model service at runtime.</b> The assistant runs on
+the institute's own hardware. A student's question, and the passages retrieved
+to answer it, never leave the machine. This was set by the project owner on
+16&nbsp;September and never relaxed. A later revision that day permitted free
+third-party <i>services</i> during development &mdash; package registries,
+Colab for training &mdash; but explicitly not language-model APIs for
+extraction or inference.</p>
+
+<p><b>CPU only, at serving time.</b> The target machine has no usable GPU for
+inference. Training was allowed to happen elsewhere; answering is not. This is
+what makes compression a first-class phase rather than an afterthought, and it
+is why a 2.46&nbsp;GB model that runs at 14.7 tokens per second is a better
+outcome than a 7&nbsp;GB model that scores marginally higher.</p>
+
+<p><b>The pipeline must maintain itself.</b> A college website changes
+constantly: new circulars, revised calendars, moved PDFs, deleted pages. A
+retrieval system built on a one-off scrape is wrong within a month. The
+ingestion layer therefore detects new, changed, moved and deleted content and
+re-syncs, and it runs when the application starts rather than from a scheduler
+entry that somebody would eventually forget.</p>
+
+<p><b>No retraining, from October onward.</b> Once the model was trained and
+compressed, re-training became computationally out of reach. Every improvement
+after 21&nbsp;September had to come from retrieval or from code, never from the
+model's weights. This constraint is more clarifying than it sounds: it meant
+every October measurement had to answer "can this be fixed without touching the
+model?", and most of the time the answer was yes.</p>
+
+<p><b>The retrieval measure had to be the supervisor's.</b> A graded term ladder
+&mdash; full credit if the word is present, half credit for a synonym, nothing
+otherwise &mdash; was proposed as the similarity measure for the project. It is
+implemented as specified, and the three-signal hybrid that ships is a strict
+extension of it: set the semantic weight to zero and you recover the original
+measure exactly. That mattered when the hybrid turned out to beat it, because
+the comparison is then between a measure and its own superset, not between two
+unrelated ideas.</p>
+
+<h3>What exists at the end of the period covered</h3>
+
+<p>A crawl of 3,329 catalogued sources producing 104,965 retrievable passages; a
+Llama-3.2-3B model fine-tuned on institutional question-answer pairs and
+compressed to 2.46&nbsp;GB of GGUF with no measurable quality loss; a retrieval
+stage that combines keyword, synonym and semantic matching and places the
+answer among the five passages shown to the model for 86% of a 98-question test
+set; and a decision log of roughly 1,600 lines recording, for every choice, the
+number that justified it &mdash; including the choices that turned out wrong.</p>
+
+<p>What does not exist is a system that answers 95% of questions correctly. The
+honest figure is lower, and section&nbsp;16 says how much lower and why.</p>
+</section>
+
+<!-- ============================== 2 ============================== -->
+<section class="sec">
+<h1>2 &nbsp; Results, up front</h1>
+
+<p class="lead">Four numbers carry the project: the corpus it reads, the model
+it runs, the compression that makes it fit, and the retrieval that decides what
+the model sees. Only the last is still moving.</p>
+
+<h3>The deployed system</h3>
+
+<table>
+<tr><th>Component</th><th>What ships</th><th>Measured</th></tr>
+<tr><td>Corpus</td><td>3,297 documents &rarr; 104,965 passages</td><td class="num">3,329 sources catalogued</td></tr>
+<tr><td>Base model</td><td>Llama-3.2-3B-Instruct, LoRA r=16</td><td class="num">grounded F1 0.7567</td></tr>
+<tr><td>Compression</td><td>GGUF Q6_K with a VJLM imatrix</td><td class="num">2.46 GB, KLD 0.0097</td></tr>
+<tr><td>Inference</td><td>llama.cpp, CPU, 20 threads</td><td class="num">14.70 tok/s, ~2.4 s/answer</td></tr>
+<tr><td>Retrieval</td><td>Three-signal hybrid, 5 passages</td><td class="num">Hit@5 86%</td></tr>
+<tr><td>Retrieval cost</td><td>BM25 &cup; dense pool of 1,200</td><td class="num">~0.2 s/query</td></tr>
+</table>
+
+<h3>Fine-tuning: the five arms that decided the model</h3>
+
+<p>All five were scored on the same 147 held-out items, same seed, same decode
+settings, with 147 of 147 rows succeeding in every arm.</p>
+
+<table>
+<tr><th>&nbsp;</th><th>Mistral-7B base</th><th>7B QLoRA</th><th>Llama-3B base</th><th>3B LoRA &#9733;</th><th>3B QLoRA</th></tr>
+<tr><td>grounded_f1</td><td class="num">0.4401</td><td class="num">0.7654</td><td class="num">0.2369</td><td class="num win">0.7567</td><td class="num">0.7567</td></tr>
+<tr><td>abstain_recall</td><td class="num">1.0000</td><td class="num">1.0000</td><td class="num">0.2833</td><td class="num win">1.0000</td><td class="num">1.0000</td></tr>
+<tr><td>false abstentions</td><td class="num">14 / 87</td><td class="num">0</td><td class="num">12 / 87</td><td class="num win">0</td><td class="num">0</td></tr>
+<tr><td>citation rate</td><td class="num">0.3605</td><td class="num">0.5102</td><td class="num">0.0204</td><td class="num">0.5102</td><td class="num">0.5170</td></tr>
+<tr><td>training minutes</td><td>&mdash;</td><td class="num">230.6</td><td>&mdash;</td><td class="num win">74.0</td><td class="num">105.1</td></tr>
+<tr><td>peak VRAM</td><td>&mdash;</td><td class="num">7.18 GB</td><td>&mdash;</td><td class="num">10.61 GB</td><td class="num">4.88 GB</td></tr>
+<tr><td>seconds / answer</td><td class="num">22.19</td><td class="num">20.16</td><td class="num">5.83</td><td class="num">13.72</td><td class="num">13.24</td></tr>
+</table>
+
+<h3>Retrieval: what each signal is actually worth</h3>
+
+<p>Measured on 98 hand-written questions, reporting Hit@5 &mdash; the share of
+questions whose answer appears in the five passages the model is shown.</p>
+
+<table>
+<tr><th>Configuration</th><th>Hit@5</th><th>Answer in candidate pool</th></tr>
+<tr><td>Keyword matching alone</td><td class="num">71%</td><td class="num">98%</td></tr>
+<tr><td>Keyword + synonym (the supervisor's coverage measure)</td><td class="num">74%</td><td class="num">99%</td></tr>
+<tr><td>Keyword + semantic</td><td class="num">82%</td><td class="num">99%</td></tr>
+<tr><td><b>All three signals &mdash; what ships</b></td><td class="num win">86%</td><td class="num">99%</td></tr>
+<tr><td>All three, weights normalised to sum to 1</td><td class="num loss">80%</td><td class="num">99%</td></tr>
+</table>
+
+<div class="box">
+<p><b>The single most important line in this report.</b> The answer is present
+in the candidate pool for <b>99%</b> of questions but in the top five for
+<b>86%</b>. Nothing is unreachable; the remaining gap is entirely a question of
+ordering. That is a much more tractable problem than a missing-data problem,
+and it is also why no amount of additional crawling would help.</p>
+</div>
+
+<h3>And the number that is not good yet</h3>
+
+<p>Hit@5 measures whether the answer was <i>retrieved</i>. It says nothing about
+whether the model then wrote it down correctly. The last end-to-end measurement
+of answer correctness over the same 98 questions was <b>57% by strict pattern
+match</b>; hand-grading all 42 failures found 7 that were correct answers scored
+wrong by the pattern, 4 genuinely ambiguous, and 31 actually wrong &mdash; so
+roughly <b>64% real</b>. That measurement predates the 22&nbsp;October fixes and
+has not been repeated. It is the gap between "the system found the right page"
+and "the system gave the right answer", and it is where the next phase of work
+belongs.</p>
+</section>
+
+<!-- ============================== 3 ============================== -->
+<section class="sec">
+<h1>3 &nbsp; Timeline at a glance</h1>
+
+<p class="lead">Five weeks, in two distinct halves. The first three weeks built
+a working system quickly. The last two weeks were spent discovering that
+several of its measurements had been wrong, and fixing that.</p>
+
+<table>
+<tr><th>Date</th><th>What happened</th><th>Phase</th></tr>
+<tr><td>16 Sep</td><td>Repository foundation; no-LLM-API policy recorded; site reconnaissance; 14 website categories classified as fine-tune / RAG / both / neither; first working pipeline end to end; enrichment layer; Colab training harness</td><td>0&ndash;4</td></tr>
+<tr><td>17 Sep</td><td>Train/test leakage found and fixed in the fine-tuning dataset; self-maintaining pipeline with app-driven refresh and headless page rendering; first dense index; stale-vector bug in the dense cache fixed; freshness gated on the site's deploy signal</td><td>3&ndash;4</td></tr>
+<tr><td>18 Sep</td><td>Mistral-7B QLoRA trained and scored; Llama-3B LoRA scored &mdash; the 3B model matches the 7B; long runs made survivable; three earlier hardware and Colab decisions superseded</td><td>8</td></tr>
+<tr><td>19 Sep</td><td>Llama-3B QLoRA exceeds 16 GB VRAM; two failed fixes recorded as failures; arm C finally trained; <b>LoRA vs QLoRA settled as a wash on quality</b></td><td>8</td></tr>
+<tr><td>21 Sep</td><td>Both models compressed to GGUF; the quantization ladder walked and gated on KL divergence; Q4_K_M built and rejected; adapters published</td><td>9</td></tr>
+<tr><td>26 Sep</td><td>Eight similarity modes measured on 90 questions; the supervisor's coverage measure selected; unrestricted WordNet expansion shown to be noise</td><td>6</td></tr>
+<tr><td>30 Sep</td><td>Three silent defects found: the corpus held almost no student-policy content; 25 of 672 PDFs had no text layer; dense vectors were misaligned with the lexical index</td><td>3&ndash;6</td></tr>
+<tr><td>12 Oct</td><td>Dropped query terms recovered; the model made to answer rather than refuse when the answer was retrieved; coverage became the default retriever</td><td>11&ndash;12</td></tr>
+<tr><td>17 Oct</td><td>Corpus rebuilt after the classifier fix: 104,965 passages from 3,297 documents, zero parse failures</td><td>4</td></tr>
+<tr><td>18 Oct</td><td>Three-signal fusion built: the semantic arm promoted from re-ranker to first-stage retriever, pool deepened to 1,200, branch mismatch penalised. Six variants measured and rejected</td><td>11</td></tr>
+<tr><td>22 Oct</td><td>A 14-point prompt-assembly leak found and fixed; WordNet re-implemented with an IDF gate; weights swept over 36 configurations; corpus audited and cleared; two chunker defects fixed</td><td>11&ndash;12</td></tr>
+</table>
+
+<div class="box warn">
+<p><b>On the shape of that timeline.</b> The work between 16 and 21 September
+looks fast because it was: a pipeline, five training runs and a full
+quantization ladder in six days. It was fast partly because the benchmark used
+to judge retrieval during that period was generating its own questions from the
+passages it was testing, which flattered everything. The October weeks are
+slower because they are mostly the cost of that shortcut, paid late.</p>
+</div>
+</section>
+
+<!-- ============================== 4 ============================== -->
+<section class="sec">
+<h1>4 &nbsp; Foundation, reconnaissance and classification</h1>
+<p class="kicker">16 September 2026</p>
+
+<p class="lead">Before any code: where does the data come from, what is it
+allowed to be used for, and which parts of it belong in a model's weights
+rather than in a search index?</p>
+
+<h3>4.1 &nbsp; The dependency policy</h3>
+
+<p>The first decision recorded in the log is not technical. It is a policy:
+the ingestion and preprocessing pipeline may not call a language-model API. The
+reason is that an extraction pipeline built on a hosted model is not
+reproducible by the institute, not auditable, and not free. Every field VJLM
+derives from a document &mdash; department, regulation year, academic year,
+document type &mdash; is therefore produced by deterministic code that can be
+read and corrected.</p>
+
+<p>Later the same day the policy was revised once, and the revision is worth
+quoting in substance: free third-party services are permitted, language-model
+APIs are not. This is what allowed Colab to be used for training while keeping
+the data pipeline honest. It is a narrower rule than "no external services",
+and the narrowness is deliberate &mdash; a blanket ban would have made the
+project impossible on the available hardware without improving its integrity.</p>
+
+<h3>4.2 &nbsp; Site reconnaissance, and the subdomain that says no</h3>
+
+<p>The institute publishes across two hosts. The main site,
+<code>www.vnrvjiet.ac.in</code>, is a modern single-page application: its
+content is assembled in the browser, so a naive HTTP fetch returns a shell with
+no text in it. The document host, <code>docs.vnrvjiet.ac.in</code>, carries the
+PDFs that matter most &mdash; regulations, syllabi, calendars, circulars &mdash;
+and its <code>robots.txt</code> disallows all crawlers.</p>
+
+<p>Both facts shaped the ingestion layer. The first forced headless page
+rendering rather than plain fetching, which is slower and more fragile but is
+the only way to see what a student sees. The second required an explicit,
+recorded decision about how that material is obtained, rather than a crawler
+that quietly ignores the directive.</p>
+
+<h3>4.3 &nbsp; Fine-tune, retrieve, both, or neither</h3>
+
+<p>The fourteen content categories on the public website were classified
+against a single question: does this content change, and does its exact wording
+matter?</p>
+
+<table>
+<tr><th>Treatment</th><th>Reasoning</th><th>Examples</th></tr>
+<tr><td><b>RAG</b></td><td>Changes on a schedule, and the exact figure or date is the answer. Must never be remembered, only looked up.</td><td>Academic calendars, fee notifications, circulars, examination schedules</td></tr>
+<tr><td><b>Fine-tune</b></td><td>Stable, and what matters is the manner of answering rather than a specific fact</td><td>Tone, role awareness, citation habit, when to refuse</td></tr>
+<tr><td><b>Both</b></td><td>Stable structure, volatile specifics</td><td>Regulations &mdash; the clause structure persists, the numbers change by batch</td></tr>
+<tr><td><b>Neither</b></td><td>Not useful to a student, or not ours to serve</td><td>Image galleries, recruitment notices, third-party embeds</td></tr>
+</table>
+
+<p>This classification is the reason the project has a training set at all. A
+model fine-tuned on fee amounts would confidently recite last year's fees
+forever; a model fine-tuned on the <i>habit</i> of citing a source and refusing
+when the context does not contain the answer improves every answer the
+retrieval layer supports. The fine-tuning set was therefore built to teach
+behaviour, and the facts were left to retrieval.</p>
+
+<div class="box">
+<p><b>Why this matters more than it appears.</b> The single largest measured
+behavioural improvement in the project comes from this classification, not from
+any retrieval work. Untuned Llama-3B answers 43 of the 60 questions it is
+supposed to refuse &mdash; it invents regulations. After fine-tuning on
+behaviour rather than facts, all three tuned arms refuse all 60, and lose every
+<i>false</i> refusal at the same time. That is the difference between a system
+that can be shown to a student and one that cannot.</p>
+</div>
+</section>
+
+<!-- ============================== 5 ============================== -->
+<section class="sec">
+<h1>5 &nbsp; The dynamic data pipeline</h1>
+<p class="kicker">16&ndash;17 September 2026</p>
+
+<p class="lead">The requirement was not "fetch the website". It was: detect what
+is new, what has changed, what has moved and what has been deleted, and keep the
+local knowledge base in step &mdash; without a human and without a scheduler.</p>
+
+<h3>5.1 &nbsp; The five stages</h3>
+
+<table>
+<tr><th>Stage</th><th>Module</th><th>Responsibility</th></tr>
+<tr><td>Discover</td><td><code>ingestion/crawler/discover.py</code></td><td>Enumerate routes and linked documents; maintain the source registry</td></tr>
+<tr><td>Fetch</td><td><code>ingestion/crawler/fetch.py</code></td><td>Conditional retrieval; per-source sync state; decide what "changed" means</td></tr>
+<tr><td>Render</td><td><code>ingestion/crawler/render.py</code></td><td>Headless browser rendering for the single-page application</td></tr>
+<tr><td>Extract</td><td><code>preprocessing/extract.py</code></td><td>PDF, HTML and DOCX to text; OCR fallback; chunking</td></tr>
+<tr><td>Enrich</td><td><code>preprocessing/enrich.py</code></td><td>Metadata extraction, PII redaction, duplicate marking</td></tr>
+</table>
+
+<h3>5.2 &nbsp; What "automatic" turned out to require</h3>
+
+<p>The honest version of this story is that "the pipeline refreshes itself" took
+three attempts, and the first two were wrong in instructive ways.</p>
+
+<p>The first approach compared content hashes. If a page's bytes changed, the
+page changed. This fails on a single-page application because the rendered
+output includes build identifiers, timestamps and hydration artifacts that
+change on every deploy whether or not any content did. Every source appeared to
+change every time, so the pipeline re-extracted the entire corpus on every run
+&mdash; correct, but useless.</p>
+
+<p>The second approach gated on the site's own deploy signal: if the application
+bundle has not changed, nothing has changed. This is cheap and mostly right, and
+it is still in the system. But it is a site-wide signal, so it cannot say
+<i>which</i> page changed, and it says nothing about the PDFs, which live on a
+different host and are not part of any bundle.</p>
+
+<p>What runs now combines them: the deploy signal decides whether to walk the
+site at all, per-source state decides which sources to re-fetch, and documents
+are tracked independently of the pages that link to them. A floor was added so
+that even with no signal at all the pipeline still re-checks periodically,
+because a signal that silently stops firing is worse than no signal.</p>
+
+<div class="box bad">
+<p><b>A bug that produced correct-looking wrong answers.</b> The dense embedding
+cache was keyed in a way that let a stale vector survive a content change: the
+passage text was re-extracted and re-indexed, but its embedding was served from
+cache and still described the <i>old</i> text. Nothing failed. Retrieval
+returned confident, well-formed, wrong passages. This class of defect &mdash;
+silent, plausible, invisible to any test that only checks that results come back
+&mdash; recurs three more times in this report, and is the main methodological
+theme of the whole project.</p>
+</div>
+
+<h3>5.3 &nbsp; Boilerplate, and why it is not hard-coded</h3>
+
+<p>The institute's site carries an announcement ticker &mdash; EAPCET code,
+NAAC grade, admission notices &mdash; that sits outside the navigation element
+and therefore survives structural stripping. It appeared on all 105 rendered
+pages. Removing it by matching its strings would work until the next redesign,
+at which point it would silently stop working.</p>
+
+<p>Instead the extractor counts how many distinct pages each line of text
+appears on, and treats lines recurring across many pages as site chrome. This
+finds the ticker without naming it, and will find whatever replaces it. It is a
+small thing, but it is the pattern the whole pipeline follows: prefer a rule
+that derives the answer from the data over a rule that encodes today's answer.</p>
+
+<h3>5.4 &nbsp; Privacy, handled at the right layer</h3>
+
+<p>Staff emails and phone numbers appear throughout the corpus, in directories
+and circulars. They are not removed from the stored passages, because removing
+them would change the text the embeddings were computed over and desynchronise
+the vectors from the metadata. Instead redaction happens at prompt-assembly
+time: the model never sees an email address or a phone number, even though the
+index contains them. The index needs them to match a query about a department
+contact; the model does not need them to answer it.</p>
+</section>
+
+<!-- ============================== 6 ============================== -->
+<section class="sec">
+<h1>6 &nbsp; Extraction, chunking and enrichment</h1>
+
+<p class="lead">104,965 passages from 3,297 documents, with zero parse failures
+on the final run. The interesting decisions are about how a document becomes
+passages, because that choice turns out to bound retrieval quality.</p>
+
+<h3>6.1 &nbsp; Chunking, and the cap that matters</h3>
+
+<p>Text is split on paragraph boundaries and packed up to 1,100 characters, with
+150 characters of overlap and a 200-character minimum. Packing means a single
+passage may contain several consecutive paragraphs if they fit.</p>
+
+<p>That packing decision is, in hindsight, the most consequential parameter in
+the retrieval system, and section&nbsp;16 argues it is now the main thing
+holding accuracy down. The reason is dilution: all three retrieval signals score
+a <i>passage</i>, and if the answer is one sentence inside 1,100 characters, it
+competes for that passage's score against roughly 900 characters of unrelated
+text. A passage that mentions the right topic four times can outscore the
+passage that actually answers the question.</p>
+
+<h3>6.2 &nbsp; Two defects in the chunker, found 22 October</h3>
+
+<p>Long paragraphs &mdash; and PDF extraction produces many, since a whole
+regulation clause or an entire table often arrives as one paragraph &mdash; took
+a separate code path that sliced them at fixed character offsets:</p>
+
+<figure>
+<pre style="font-family:Consolas,monospace;font-size:8.6pt;background:#eef2f6;padding:3mm;margin:0;">if len(p) &gt; max_c:
+    for i in range(0, len(p), max_c - ov):
+        out.append(p[i:i + max_c])</pre>
+<figcaption>The original long-paragraph path, in <code>preprocessing/extract.py</code>.</figcaption>
+</figure>
+
+<p>Two things are wrong with it. It cuts at an arbitrary character, so passages
+begin and end mid-sentence and sometimes mid-word, which damages both the
+embedding and the model's ability to read the passage. And its final slice is
+frequently shorter than the 200-character minimum, at which point the filter at
+the end of the function discards it &mdash; so a 2,050-character paragraph
+silently lost its last 150 characters. Verified on exactly that case: three
+pieces produced, two kept.</p>
+
+<p>Both are fixed. Cuts now land on the last sentence boundary before the limit,
+falling back to a word boundary, and an undersized tail is merged into the piece
+before it rather than dropped. The fix affects future extractions; it does not
+change the current corpus until the pipeline runs again.</p>
+
+<h3>6.3 &nbsp; Enrichment that does not rewrite text</h3>
+
+<p>Department, regulation, academic year and document type are added as metadata
+<i>beside</i> each passage rather than edited into it. The reasoning is recorded
+in the module itself: embeddings are computed over the original text, so
+mutating the text in place would silently desynchronise the vectors from the
+metadata &mdash; the same failure class as the stale-vector bug. Metadata can
+therefore be re-derived and corrected at any time without re-embedding 105,000
+passages, which during October was done repeatedly.</p>
+
+<h3>6.4 &nbsp; Was the knowledge base ever the problem?</h3>
+
+<p>This question was put to a direct test on 22&nbsp;October, because it would
+be easy to spend weeks on retrieval while the real fault was bad data. For each
+of the 17 questions retrieval was failing, the entire 104,965-passage corpus was
+searched for a passage containing the answer, and each hit was classified.</p>
+
+<table>
+<tr><th>Verdict</th><th>Meaning</th><th>Count</th></tr>
+<tr><td>Absent</td><td>No passage anywhere contains the answer &mdash; the crawl or extractor lost it</td><td class="num">0 of 17</td></tr>
+<tr><td>Blob</td><td>Present, but in one undivided page-sized passage</td><td class="num">0 of 17</td></tr>
+<tr><td>Table</td><td>Present but flattened into unreadable text</td><td class="num">0 of 17</td></tr>
+<tr><td><b>Readable</b></td><td><b>Present in clean, correctly extracted text</b></td><td class="num win">17 of 17</td></tr>
+</table>
+
+<p>Four cases were initially flagged as mangled tables by an automatic shape
+heuristic. Dumped in full and read by eye, all four were legible: the clubs list
+has one club per line, the accreditation list reads
+<code>NAAC Accredited with 'A++' Grade NBA Accredited CE, EEE, ME...</code>, and
+the academic calendar contains
+<code>Commencement of Classes | 10 August 2026</code> &mdash; which is precisely
+the answer to the question that was failing. The heuristic was over-firing, and
+so was a parallel check for words glued together by PDF extraction: it flagged
+3.6% of passages, but the hits were mostly real words such as
+<code>HISTOPATHOLOGICAL</code> and surnames. Genuine gluing is confined to PDF
+display headers, never body text.</p>
+
+<div class="box">
+<p><b>Conclusion, stated plainly because it redirects everything after it:</b>
+the knowledge base is not the limiting factor. The answers are present and
+readable. One narrow extraction defect does remain &mdash; OCR misreads
+superscript ordinals in scanned PDFs, rendering <code>06th January</code> as
+<code>06m January</code>, which a human reads past but a keyword match cannot
+&mdash; and it is worth fixing, but it is not worth 14 questions.</p>
+</div>
+</section>
+
+<!-- ============================== 7 ============================== -->
+<section class="sec">
+<h1>7 &nbsp; Three things that were silently broken</h1>
+<p class="kicker">30 September 2026</p>
+
+<p class="lead">Two weeks after the system first worked end to end, three
+defects were found on the same day. None of them produced an error. All three
+invalidated measurements that had already been recorded as decisions.</p>
+
+<h3>7.1 &nbsp; The corpus contained almost no student-policy content</h3>
+
+<p>VJLM is meant to answer student questions about rules. A direct audit of
+12,978 passages found that the corpus barely contained any. What it mostly
+contained was syllabi, committee minutes, audited balance sheets, placement
+statistics and departmental reports &mdash; everything the institute publishes,
+weighted by how much of it there is, rather than weighted by what a student
+would ask about.</p>
+
+<p>The root cause was already recorded, which is the uncomfortable part: the
+source classifier was assigning categories in a way that under-collected the
+regulation and policy documents. It had been written on 16&nbsp;September and
+noted as approximate. Its approximation turned out to be load-bearing.</p>
+
+<p>The consequence for everything measured before that date is sharp. Retrieval
+quality had been measured on a corpus that largely did not contain the answers
+to the questions a student asks, which means the measurements were describing a
+different system from the one intended. The classifier was fixed and the corpus
+rebuilt &mdash; the rebuild that eventually produced the 104,965 passages
+reported here, finishing 17&nbsp;October.</p>
+
+<h3>7.2 &nbsp; 25 of 672 PDFs had no text layer at all</h3>
+
+<p>A browser inspection separated the document collection into categories that
+the extractor had been treating identically. Twenty-five PDFs are scans: images
+of pages, with no extractable text. The extractor processed them without
+complaint and produced nothing, so they were simply absent from the index while
+appearing in every count of successfully processed sources.</p>
+
+<p>OCR was added for exactly that category. The recogniser then introduced a
+second defect of its own: it dropped spaces between English words, so
+<code>Commencement of Classes</code> became a single token. That had to be
+detected and repaired separately. The repair is recorded with its reasoning,
+because the obvious fix &mdash; inserting spaces wherever a dictionary word
+boundary appears &mdash; would corrupt legitimate compound identifiers such as
+regulation codes.</p>
+
+<div class="box warn">
+<p><b>The category that lied.</b> The decision log's own heading for this entry
+is "OCR for image-only PDFs, and the category that lied". The lie was not the
+PDFs; it was the pipeline's success metric. "672 of 672 PDFs processed" was
+true and meaningless. A count of documents processed is not a count of documents
+<i>read</i>, and nothing in the system distinguished them until somebody looked
+at the files by hand.</p>
+</div>
+
+<h3>7.3 &nbsp; Dense vectors silently misaligned with the lexical index</h3>
+
+<p>The third defect is the most serious. The dense vector matrix and the BM25
+index are two parallel structures over the same passages, and retrieval assumes
+row <i>i</i> of one corresponds to entry <i>i</i> of the other. A rebuild
+sequence existed in which that correspondence broke.</p>
+
+<p>When it broke, nothing failed. Semantic retrieval returned passages &mdash;
+just the wrong ones, consistently, with plausible scores. Every retrieval
+measurement that involved the dense arm before the fix is therefore
+uninterpretable, including the comparison on 26&nbsp;September that concluded
+cosine similarity was the weakest signal available.</p>
+
+<p>That conclusion is now known to be wrong, and section&nbsp;8 covers how it
+was reached and what replaced it. The misalignment is not the only reason it was
+wrong &mdash; the benchmark was also flawed &mdash; but it is sufficient on its
+own to invalidate the number.</p>
+
+<h3>7.4 &nbsp; What these three have in common</h3>
+
+<p>None of them raised an exception. Each one produced output that looked
+entirely normal: passages were returned, documents were counted as processed,
+measurements completed and were recorded with the care the decision log
+demands. The failure mode throughout this project has not been code that breaks;
+it has been code that works on the wrong thing while reporting success.</p>
+
+<p>The practical response was to change what gets checked. It is not enough to
+verify that retrieval returns results, that extraction processed every file, or
+that a measurement ran to completion. The useful checks are the ones that ask
+whether the thing being measured was exercised at all &mdash; and as
+section&nbsp;17 describes, that lesson had to be learned a second time in
+October, at the cost of six consecutive meaningless measurements.</p>
+</section>
+
+<!-- ============================== 8 ============================== -->
+<section class="sec">
+<h1>8 &nbsp; The benchmark problem, and the similarity measure</h1>
+<p class="kicker">26 September 2026</p>
+
+<p class="lead">The project's supervisor proposed a specific similarity measure.
+It was implemented, compared against seven alternatives, and won decisively.
+The comparison was also, it later turned out, measuring the wrong thing.</p>
+
+<h3>8.1 &nbsp; The measure as proposed, and as implemented</h3>
+
+<p>The proposal is a graded term ladder: for each term of the query, award 1.0
+if the word appears in the passage, 0.5 if a synonym appears, and 0 otherwise.
+The implementation adds one thing &mdash; IDF weighting &mdash; and the addition
+is not decoration:</p>
+
+<div class="formula">
+Cov(<i>q</i>, <i>d</i>) &nbsp;=&nbsp;
+<span class="frac"><span class="top">&Sigma;<sub>t</sub> idf(<i>t</i>) &middot; tier(<i>t</i>, <i>d</i>)</span><span class="bot">&Sigma;<sub>t</sub> idf(<i>t</i>)</span></span>
+&nbsp;&isin;&nbsp; [0, 1]
+</div>
+
+<p>The word <code>students</code> occurs in most of the corpus and separates
+nothing. The word <code>condonation</code> occurs in a handful of documents and
+separates almost perfectly. An unweighted average over query terms treats them
+as equally informative, which is plainly wrong for the questions students ask.
+Weighting each tier by the term's inverse document frequency means that covering
+a <i>discriminating</i> term counts for more than covering a common one.</p>
+
+<p>One further detail: a query term that does not appear in the corpus at all is
+assigned the maximum observed IDF. It is maximally rare and unmatchable, so it
+only ever enters the denominator &mdash; correctly penalising every passage for
+failing to cover something distinctive, rather than being quietly ignored.</p>
+
+<h3>8.2 &nbsp; Eight modes, measured</h3>
+
+<p>Ninety benchmark questions, one index of 13,051 passages, same hardware:</p>
+
+<table>
+<tr><th>Mode</th><th>Recall@5</th><th>MRR</th><th>p50 latency</th></tr>
+<tr><td><b>coverage</b> &mdash; the supervisor's ladder, IDF-weighted</td><td class="num win">0.944</td><td class="num win">0.836</td><td class="num">35.0 ms</td></tr>
+<tr><td>coverage + synonyms</td><td class="num">0.944</td><td class="num">0.836</td><td class="num">14.0 ms</td></tr>
+<tr><td>lexical (0.6&middot;BM25 + 0.4&middot;coverage)</td><td class="num">0.933</td><td class="num">0.822</td><td class="num">17.4 ms</td></tr>
+<tr><td>bm25 + synonyms</td><td class="num">0.944</td><td class="num">0.815</td><td class="num">29.6 ms</td></tr>
+<tr><td>bm25</td><td class="num">0.911</td><td class="num">0.803</td><td class="num">19.0 ms</td></tr>
+<tr><td>hybrid3 (0.35 / 0.25 / 0.40)</td><td class="num">0.900</td><td class="num">0.780</td><td class="num">43.6 ms</td></tr>
+<tr><td>hybrid (0.5 BM25 + 0.5 cosine)</td><td class="num">0.789</td><td class="num">0.722</td><td class="num">33.5 ms</td></tr>
+<tr><td><b>dense</b> &mdash; cosine similarity alone</td><td class="num loss">0.667</td><td class="num loss">0.509</td><td class="num">326.0 ms</td></tr>
+</table>
+
+<p>Coverage won on both metrics and was among the cheapest. The explanation
+offered at the time is still correct as far as it goes: BM25 is a term-<i>
+frequency</i> measure, so a page repeating "attendance" fifty times outranks a
+page covering attendance <i>and</i> examinations <i>and</i> condonation.
+Coverage cannot be won by repetition, because a term contributes its IDF once or
+not at all, and breadth of coverage is the better signal for the multi-concept
+questions students actually ask.</p>
+
+<h3>8.3 &nbsp; Two predictions in the design document, both refuted</h3>
+
+<p>These are recorded because a decision log that preserves only correct guesses
+is worthless. The design document predicted that cosine similarity would be the
+strongest single signal, and assigned it the largest weight in the proposed
+hybrid. It finished <i>last</i>, with MRR 0.509 against coverage's 0.836, and
+seventeen times slower. The document also predicted that fusion would beat its
+parts; every blend tried lost to coverage alone, and lost in proportion to how
+much cosine it contained.</p>
+
+<h3>8.4 &nbsp; Why the whole table is unreliable</h3>
+
+<p>The ninety benchmark questions were generated automatically, by lifting
+roughly twelve words verbatim from the gold passage. That is not a paraphrase.
+It is a bag of exact keywords drawn from the very passage the system is supposed
+to find.</p>
+
+<p>A benchmark of that construction structurally favours lexical matching and
+structurally penalises embeddings, because the one thing an embedding model
+offers &mdash; matching meaning across different wording &mdash; is exactly
+what the questions never require. The conclusion "cosine is the weakest signal"
+was therefore an artifact of the measuring instrument, compounded by the vector
+misalignment described in section&nbsp;7.3.</p>
+
+<div class="box bad">
+<p><b>What this cost.</b> From 26&nbsp;September to 18&nbsp;October the system
+ran with the semantic signal weighted at or near zero, on the evidence of this
+table. Rebuilt on hand-written questions in October, the same comparison shows
+semantic matching worth <b>+11 points</b> of Hit@5 &mdash; the largest single
+contribution of any signal. Three weeks of retrieval work were spent optimising
+a configuration that a flawed benchmark had recommended.</p>
+</div>
+
+<p>The lesson generalises past this project. The benchmark was built before the
+components were compared, which was the right order and is written into the
+project's phase gates. But building it first does not make it valid, and a
+benchmark that is cheap to generate is usually cheap because it has removed the
+difficulty the system exists to handle.</p>
+</section>
+
+<!-- ============================== 9 ============================== -->
+<section class="sec">
+<h1>9 &nbsp; Fine-tuning: five configurations</h1>
+<p class="kicker">18&ndash;19 September 2026</p>
+
+<p class="lead">Two base models, two adaptation methods, and both bases untuned
+as controls. Scored on the same 147 held-out items with the same seed and decode
+settings, 147 of 147 rows succeeding in every arm.</p>
+
+<h3>9.1 &nbsp; What was being decided</h3>
+
+<p>Three questions at once, which is why five arms rather than two: does the 7B
+model justify its cost over the 3B model; does QLoRA's memory saving cost
+quality; and does fine-tuning actually matter against a well-prompted base
+model. The third is the one most projects skip, and it produced the largest
+effect.</p>
+
+<h3>9.2 &nbsp; The measurements</h3>
+
+<table>
+<tr><th>&nbsp;</th><th>Mistral-7B base</th><th>7B QLoRA</th><th>Llama-3B base</th><th>3B LoRA</th><th>3B QLoRA</th></tr>
+<tr><td>grounded_f1</td><td class="num">0.4401</td><td class="num">0.7654</td><td class="num">0.2369</td><td class="num">0.7567</td><td class="num">0.7567</td></tr>
+<tr><td>abstain_recall</td><td class="num">1.0000</td><td class="num">1.0000</td><td class="num">0.2833</td><td class="num">1.0000</td><td class="num">1.0000</td></tr>
+<tr><td>false abstentions</td><td class="num">14 / 87</td><td class="num">0</td><td class="num">12 / 87</td><td class="num">0</td><td class="num">0</td></tr>
+<tr><td>citation_rate</td><td class="num">0.3605</td><td class="num">0.5102</td><td class="num">0.0204</td><td class="num">0.5102</td><td class="num">0.5170</td></tr>
+<tr><td>training minutes</td><td>&mdash;</td><td class="num">230.6</td><td>&mdash;</td><td class="num">74.0</td><td class="num">105.1</td></tr>
+<tr><td>peak VRAM</td><td>&mdash;</td><td class="num">7.18 GB</td><td>&mdash;</td><td class="num">10.61 GB</td><td class="num">4.88 GB</td></tr>
+<tr><td>seconds / answer</td><td class="num">22.19</td><td class="num">20.16</td><td class="num">5.83</td><td class="num">13.72</td><td class="num">13.24</td></tr>
+</table>
+
+<h3>9.3 &nbsp; LoRA and QLoRA are behaviourally indistinguishable here</h3>
+
+<p>This was tested properly, as a controlled comparison: identical data,
+identical ordering, identical seed, schedule, rank, target modules, batch size
+and sequence length, with only the representation of the frozen base weights
+differing. The result is 0.756694 against 0.756702 &mdash; eight parts in a
+million, against a pre-registered noise floor of roughly 0.03.</p>
+
+<p>It is worth stating why this is not simply a duplicated row, because that was
+the first suspicion. Sixty-seven of the 87 scored items receive <i>different</i>
+scores in the two arms; they average out. The two models behave differently
+item by item and identically in aggregate.</p>
+
+<p>So the trade is not quality. It is VRAM against wall-clock: QLoRA used 54%
+less memory and took 42% longer, because the 4-bit NF4 base weights must be
+dequantized on every forward pass and again during the backward pass. For anyone
+choosing between them, that is the entire decision, and it depends only on which
+resource is scarce.</p>
+
+<h3>9.4 &nbsp; The 3B model matches the 7B once tuned</h3>
+
+<p>0.7567 against 0.7654, with confidence intervals overlapping across nearly
+their whole width &mdash; at a third of the training time and roughly half the
+inference time. Given a CPU serving constraint, this settled the base model
+choice without needing a close call on quality.</p>
+
+<h3>9.5 &nbsp; Fine-tuning mattered far more than base-model choice</h3>
+
+<p>The two untuned bases differ by 0.2032 in grounded F1. The three tuned arms
+differ by 0.0087 across the board &mdash; a twenty-three-fold difference in
+effect size. Whatever distinguishes Mistral-7B from Llama-3B on general
+benchmarks is almost entirely erased by training on 518,000 tokens of
+institutional question-answer pairs.</p>
+
+<p>The clearest single effect is in refusal behaviour. Untuned Llama-3B answers
+43 of the 60 questions whose correct response is "I could not find this in the
+available VNRVJIET sources" &mdash; it invents regulations, dates and fees with
+complete fluency. After fine-tuning, all three tuned arms refuse all 60. And
+critically they do so while <i>losing</i> every false refusal: the base models
+each wrongly refuse 12 to 14 answerable questions, the tuned arms refuse none.
+Both error directions improved at once, which is unusual and is the strongest
+evidence in the project that the training data was built correctly.</p>
+
+<h3>9.6 &nbsp; A ceiling worth explaining</h3>
+
+<p>The citation rate of 0.5102 looks poor until one notices that it cannot
+exceed 0.5918 on this evaluation set: 60 of the 147 items are abstention cases,
+and an abstention has nothing to cite. 0.5102 means 75 of the 87 answerable
+items carried a citation &mdash; 86% of what is reachable.</p>
+
+<h3>9.7 &nbsp; Every arm over-fits, and the scored adapter is not the best one</h3>
+
+<p>Validation loss bottoms at step 50 of 150 for both Llama arms and step 75 for
+Mistral, then rises for the remainder of training. The adapters that were scored
+are the <i>final</i> step, because that is what the training framework's
+<code>save_model()</code> writes. The better checkpoint exists and was not the
+one measured.</p>
+
+<p>This is recorded rather than quietly fixed because it bounds every
+fine-tuning number in this report from below: the arms as scored are worse than
+the arms as they could have been. A note in the log from 19&nbsp;September
+&mdash; "the lowest-loss checkpoint is not the better model" &mdash; records the
+counter-argument, which is that validation loss and the behavioural metrics
+disagree about which checkpoint is best, and the behavioural metrics are what
+the project cares about. The question was left open rather than resolved.</p>
+
+<h3>9.8 &nbsp; Three days of infrastructure failure, recorded as failure</h3>
+
+<p>Arm C &mdash; Llama-3B with QLoRA &mdash; took three attempts over two days,
+and the log keeps all three. The first exceeded the 16&nbsp;GB VRAM ceiling,
+which was itself the surprising part: QLoRA is supposed to use <i>less</i>
+memory, and it does for the 7B model. The second attempt kept the frozen output
+head out of fp32 and was recorded as a resolution; the next day it was corrected
+to "insufficient, not a resolution", because the run failed again. The third
+attempt succeeded and produced the numbers above.</p>
+
+<p>There is also a correction in the log worth reproducing for anyone
+reproducing this work: <code>--resume</code> does not function in this
+environment and never did. A multi-hour training run that appears to resume from
+a checkpoint is, in this setup, silently starting over.</p>
+</section>
+
+<!-- ============================== 10 ============================== -->
+<section class="sec">
+<h1>10 &nbsp; Compression for CPU</h1>
+<p class="kicker">21 September 2026</p>
+
+<p class="lead">The serving constraint is a CPU. The tuned adapters were merged
+into their bases, converted to GGUF, and the quantization ladder walked from Q8
+downward &mdash; against a quality gate chosen before any build was measured.</p>
+
+<h3>10.1 &nbsp; The measurement problem, solved first</h3>
+
+<p>The obvious approach is to quantize, re-score on the behavioural evaluation,
+and keep the smallest build that does not lose quality. This does not work, and
+the reason is worth understanding: the 87-item answerable set has a noise floor
+of roughly 0.03 in grounded F1, and the quality difference between Q8 and Q5 is
+far smaller than that. The evaluation cannot resolve the thing being decided. It
+would return differences, those differences would be noise, and a build would be
+chosen by coin flip while appearing to be chosen by measurement.</p>
+
+<p>The gate used instead is <b>per-token KL divergence</b> against the
+unquantized model's output distribution. This measures the damage directly
+rather than inferring it from downstream answer scores, and it is sensitive
+enough to separate adjacent rungs of the ladder.</p>
+
+<h3>10.2 &nbsp; A rule fixed before the results</h3>
+
+<p>The selection rule was pre-registered: <b>quality first, then size, then
+speed</b>. This matters because by the time results arrive there is always a
+build one would prefer for other reasons, and a rule written afterwards bends to
+accommodate it. Writing it down first is the only thing that makes "chosen by
+measurement" a true statement rather than a decoration.</p>
+
+<p>Three reference levels were established so that different error sources stay
+separable, and the log records three corrections that had to be made to the
+measurement procedure itself before the ladder could be trusted.</p>
+
+<h3>10.3 &nbsp; What shipped</h3>
+
+<table>
+<tr><th>&nbsp;</th><th>VJLM-Llama-3B</th><th>VJLM-Mistral-7B</th></tr>
+<tr><td>Base</td><td><code>Llama-3.2-3B-Instruct</code> @ <code>0cb88a4f</code></td><td><code>Mistral-7B-Instruct-v0.3</code> @ <code>c170c708</code></td></tr>
+<tr><td>Adaptation</td><td>LoRA r=16, bf16 base</td><td>QLoRA r=16, 4-bit NF4 base</td></tr>
+<tr><td>Adapter size</td><td>97 MB</td><td>168 MB</td></tr>
+<tr><td>grounded_f1 before quantization</td><td class="num">0.7567</td><td class="num">0.7654</td></tr>
+<tr><td><b>Build selected</b></td><td class="win"><b>Q6_K + VJLM imatrix</b></td><td><b>Q5_K_M</b></td></tr>
+<tr><td>Deployed size</td><td class="num win">2.46 GB &mdash; 2.43&times; smaller</td><td class="num">4.78 GB &mdash; 2.82&times; smaller</td></tr>
+<tr><td>KL divergence</td><td class="num">0.0097</td><td class="num">0.0077</td></tr>
+<tr><td>Change in grounded F1</td><td class="num win">+0.0000</td><td class="num">+0.0048</td></tr>
+<tr><td>CPU throughput</td><td class="num win">14.70 tok/s &mdash; ~2.4 s/answer</td><td class="num">8.07 tok/s &mdash; ~4.3 s/answer</td></tr>
+</table>
+
+<p>The Llama build is what VJLM serves. Its grounded F1 moved by exactly zero,
+so a 2.43-fold size reduction was obtained for no measurable quality cost.</p>
+
+<h3>10.4 &nbsp; The two models needed different compression</h3>
+
+<p>Mistral tolerated Q5_K_M; Llama required Q6_K. This is the substantive
+finding of the phase rather than an inconvenience in reporting it. Had a single
+quantization level been chosen for both &mdash; which is the normal practice
+&mdash; one of the two would have been mis-served: either Llama would have been
+damaged at Q5, or Mistral would have carried 20% more weight than it needed.
+Compression level is a property of the model, not of the project.</p>
+
+<h3>10.5 &nbsp; Q4_K_M was built and rejected</h3>
+
+<p>It was attractive: smaller and faster than anything else on the ladder. It is
+also the only build in the ladder that <b>breaks abstention</b> &mdash; it
+answers two questions it should refuse, reintroducing exactly the failure that
+fine-tuning had eliminated.</p>
+
+<p>The pre-registered rule put quality first, so Q4_K_M was dropped. This is the
+one place in the project where the rule did real work: without it, the argument
+"two questions out of 147 is within noise, and the file is 30% smaller" would
+have been difficult to refuse, and the shipped system would silently invent
+regulations in a category it had been specifically trained not to.</p>
+
+<h3>10.6 &nbsp; The imatrix, and keeping the benchmark out of it</h3>
+
+<p>An importance matrix lets the quantizer preserve precision where it matters
+for a specific domain. VJLM's was computed from a 518,000-token corpus: 61%
+sampled from the retrieval passages, which dominate what the model actually
+reads at inference time, and 39% from the training set rendered in the model's
+own chat template.</p>
+
+<p>Validation and test splits are excluded by construction. Calibrating on
+held-out text would leak the benchmark into the artifact being benchmarked
+&mdash; the compression would be tuned on the very examples later used to prove
+it was lossless. This is a small detail that is easy to get wrong and
+impossible to detect afterwards.</p>
+
+<p>The compressed builds are published on Hugging Face rather than in the
+repository: 7.25&nbsp;GB of quantized weights does not belong in version
+control, while the adapters, every script and every recorded result do.</p>
+</section>
+
+<!-- ============================== 11 ============================== -->
+<section class="sec">
+<h1>11 &nbsp; Serving: authentication, prompt, interface</h1>
+
+<p class="lead">The parts between retrieval and the student. Short, because
+little here was contentious &mdash; with one exception that changed how the
+model behaves on every answer.</p>
+
+<h3>11.1 &nbsp; Role awareness, and where access control happens</h3>
+
+<p>VJLM distinguishes students, faculty and guests. The important design point
+is that access control happens during <i>retrieval</i>, not in the prompt. By
+the time passages reach prompt assembly, the ones a given role may not see are
+already gone. A prompt instruction such as "do not reveal faculty-only
+material" is not a security control; it is a suggestion to a language model.</p>
+
+<p>Authentication itself remains a role simulation rather than a real identity
+system. It is honest to call that unfinished.</p>
+
+<h3>11.2 &nbsp; The prompt, and a cue that had to be removed</h3>
+
+<p>The prompt is assembled in a fixed order: system instruction, role note,
+retrieved context, question, output rules. Citations are computed by code rather
+than requested from the model, because a model asked to cite its sources will
+produce citation-shaped text whether or not it corresponds to a real passage.</p>
+
+<p>One finding here is specific enough to be useful to anyone fine-tuning a
+small model. The role note originally read "The user is a STUDENT. Explain
+plainly and practically." That phrasing was <i>also</i> the exact cue used in
+the role-differentiation training rows, whose answer template ends with "check
+this against your own regulation batch". Including the cue at inference time
+therefore made every student answer end with an unsupported hedge. The audience
+note is now phrased differently, and the hedging stopped. A fine-tuned model
+pattern-matches its own training cues more literally than one expects.</p>
+
+<h3>11.3 &nbsp; Refusing when the answer had in fact been retrieved</h3>
+
+<p>On 12&nbsp;October a failure class was addressed that is the mirror image of
+hallucination: the system retrieved the correct passage, placed it in the
+prompt, and then refused to answer. The abstention behaviour that fine-tuning
+installed so successfully was firing even when the context was sufficient.</p>
+
+<p>The fix is a rescue path: when retrieval has high confidence that the
+retrieved passages contain the answer, the refusal is overridden and the model
+is asked again. It is recorded as a decision rather than a tweak because it
+deliberately weakens a safety behaviour, and that trade deserves to be visible.
+The same day's work also recovered query terms that the tokenizer had been
+dropping &mdash; the "O" in "O grade", the "SEE" in "CIE and SEE" &mdash; which
+is a small thing that mattered a great deal for questions about grades.</p>
+</section>
+
+<!-- ============================== 12 ============================== -->
+<section class="sec">
+<h1>12 &nbsp; October: the honest re-measurement</h1>
+<p class="kicker">12&ndash;22 October 2026</p>
+
+<p class="lead">Three weeks spent discovering that the retrieval system had been
+optimised against a benchmark that could not measure it, and rebuilding the
+measurement before touching the system again.</p>
+
+<h3>12.1 &nbsp; A question set written by hand</h3>
+
+<p>Ninety-eight questions were written as a student would actually ask them.
+Sixty-two came first, in three splits, and were used while tuning retrieval.
+Thirty-six more &mdash; <code>n01</code> to <code>n36</code> &mdash; were written
+afterwards and deliberately never tuned against, so that the project has at
+least one number that cannot have been fitted.</p>
+
+<p>The difference between the two groups is the most sobering figure in the
+project. Current Hit@5 is 86% overall and <b>72% on the never-tuned
+thirty-six</b>. Every number reported on the full set is optimistic by roughly
+fourteen points, and that is what tuning on a question set does even when one is
+trying to avoid it.</p>
+
+<h3>12.2 &nbsp; The semantic arm promoted from re-ranker to retriever</h3>
+
+<p>Until 18&nbsp;October the candidate pool came from BM25 and the semantic
+score only re-ordered it. The defect in that design is structural: a passage
+BM25 never retrieves cannot be rescued by any weighting, however good the
+embedding.</p>
+
+<p>Measured: of 25 misses, <b>14 were passages BM25 ranked between 300th and
+9,000th</b> &mdash; unreachable by reweighting &mdash; while the embedding placed
+them at ranks 2, 16, 22 and 37. The reverse also occurs, which is what settles
+the design: the question about leftover food at the hostels has its answer at
+BM25 rank 7 and cosine rank 908. Neither arm can be trusted to own the pool.</p>
+
+<p>So the candidate set became the <i>union</i> of both rankings, with every
+candidate scored by all three signals. Hit@5 moved from 74% to 83%. Deepening
+the semantic pool from 300 to 1,200 then moved Hit@100 from 95% to 98%, for
+about 60 milliseconds a query, because gold passages sit as deep as cosine rank
+1,156. Beyond 1,200 nothing further is reached &mdash; 4,000 measured identical.</p>
+
+<h3>12.3 &nbsp; A fourteen-point leak between ranking and the model</h3>
+
+<p>This is the largest single defect found in the project, and it had been
+invisible because the instrument that would have caught it was measuring one
+step too early.</p>
+
+<p>Hit@5 was 83%. But Hit@5 asks whether the answer appears in the five
+<i>passages selected</i>. The model does not see whole passages; it sees each
+passage trimmed to fit a character budget, with the sentences that best match
+the question kept. Measuring the question the model actually faces &mdash; is
+the answer in the prompt text? &mdash; gave <b>69%</b>.</p>
+
+<p>Fourteen points of correctly retrieved answers were being discarded after
+ranking. Two causes, in series:</p>
+
+<ol>
+<li>The trimming function dropped any sentence scoring below half the
+best-scoring sentence. But the answer is typically the sentence the question's
+words are <i>absent</i> from &mdash; "in which area of Hyderabad is the campus"
+is answered by a place name the question cannot contain &mdash; so the answer
+scored low and was filtered out of a passage retrieval had correctly chosen.</li>
+<li>That filter ran <i>before</i> the character budget, which made the budget
+inert: every surviving sentence already fit, so raising the budget changed
+nothing. The prompt sat at 491 tokens of a 4,096-token context. The system was
+using twelve per cent of its context window.</li>
+</ol>
+
+<p>Low-scoring sentences now go last rather than away, and the budget was raised
+from 3,250 to 5,000 characters. Answer-in-prompt went 69% &rarr; 79% &rarr;
+<b>86%</b>, which is exactly Hit@5. The leak is closed; the prompt now loses
+nothing that ranking found. Beyond 5,000 characters nothing changes, so that is
+the smallest budget that leaks nothing.</p>
+
+<h3>12.4 &nbsp; A configuration split that invalidated the numbers</h3>
+
+<p>Found while explaining the retrieval formula, which is a good argument for
+having to explain one's own system. The application defaulted to a semantic
+weight of <b>0.5</b>. All four evaluation harnesses hard-coded <b>1.5</b>.
+Nothing set the environment variable that would have reconciled them.</p>
+
+<p>So every retrieval figure measured in October described a configuration the
+application did not serve. Both now read a single default, and the harnesses
+override it only when explicitly asked. It is a two-line fix for a defect that
+silently detached three weeks of measurement from the deployed system.</p>
+
+<h3>12.5 &nbsp; What the weights are worth, swept properly</h3>
+
+<p>With the measurement trustworthy, the weights were searched rather than
+guessed: 36 configurations over part-of-speech, synonym gate, slot cap and
+synonym weight, each scored on the tuning split and reported separately on the
+held-out and never-tuned splits.</p>
+
+<table>
+<tr><th>Change</th><th>Hit@5</th><th>Where the gain landed</th></tr>
+<tr><td>Starting point</td><td class="num">83%</td><td>&mdash;</td></tr>
+<tr><td>Synonym weight 0.5 &rarr; 1.0</td><td class="num">85%</td><td>Entirely on the never-tuned split, 23 &rarr; 25 of 36</td></tr>
+<tr><td>+ IDF gate on WordNet expansion</td><td class="num win">86%</td><td>Never-tuned split 25 &rarr; 26 of 36</td></tr>
+<tr><td>Part of speech, slot cap, gate ratio 1.3</td><td class="num">no change</td><td>Twelve configurations tie at 86%</td></tr>
+</table>
+
+<p>Twelve settings tie at the top and none exceeds it. The weight-tuning space
+is exhausted; further gains must come from somewhere else.</p>
+</section>
+
+<!-- ============================== 13 ============================== -->
+<section class="sec">
+<h1>13 &nbsp; The three-signal retrieval metric</h1>
+
+<p class="lead">The measure that ships. It is the supervisor's coverage ladder
+with a third signal added, and set the semantic weight to zero and the original
+measure is recovered exactly.</p>
+
+<h3>13.1 &nbsp; The formula</h3>
+
+<div class="formula">
+<i>R</i>(<i>q</i>, <i>c</i>) &nbsp;=&nbsp; 1.0&thinsp;<i>K</i> &nbsp;+&nbsp;
+1.0&thinsp;<i>W</i> &nbsp;+&nbsp; 1.5&thinsp;<i>S</i> &nbsp;+&nbsp; 0.2&thinsp;<i>B</i>
+</div>
+
+<p>Each component lands in [0, 1], which is what makes the weights comparable
+rather than arbitrary.</p>
+
+<h4><i>K</i> &mdash; direct keyword matching</h4>
+<div class="formula">
+<i>K</i> &nbsp;=&nbsp;
+<span class="frac"><span class="top">&Sigma;<sub>i</sub> idf<sub>i</sub> &middot; E<sub>i</sub></span><span class="bot">&Sigma;<sub>i</sub> idf<sub>i</sub></span></span>
+&nbsp;&nbsp;&nbsp; E<sub>i</sub> = 1 if term <i>i</i> or an inflection of it is present
+</div>
+
+<h4><i>W</i> &mdash; WordNet and domain synonym matching</h4>
+<div class="formula">
+<i>W</i> &nbsp;=&nbsp;
+<span class="frac"><span class="top">&Sigma;<sub>i</sub> idf<sub>i</sub> &middot; (1 &minus; E<sub>i</sub>) &middot; N<sub>i</sub></span><span class="bot">&Sigma;<sub>i</sub> idf<sub>i</sub></span></span>
+&nbsp;&nbsp;&nbsp; N<sub>i</sub> = 1 if a synonym is present
+</div>
+
+<p>The <i>(1 &minus; E<sub>i</sub>)</i> factor matters: a term already matched
+exactly is never counted a second time as a synonym match. In the implementation
+this is not a multiplication but an <code>if/elif</code> &mdash; each term's IDF
+mass is assigned to <i>K</i> or to <i>W</i>, never to both. Splitting the
+original coverage computation into two separately weightable halves is what
+makes the three-signal formula possible at all.</p>
+
+<h4><i>S</i> &mdash; semantic matching</h4>
+<div class="formula">
+<i>S</i> &nbsp;=&nbsp;
+<span class="frac"><span class="top">cos(<i>q</i>, <i>c</i>) &minus; min<sub>candidates</sub></span><span class="bot">max<sub>candidates</sub> &minus; min<sub>candidates</sub></span></span>
+</div>
+
+<p>Normalised across the candidate pool, not the corpus. A corpus-wide scale was
+tried and rejected: it pushes every candidate near 1.0 on a query whose topic is
+common and near 0 on a rare one, at which point the weights stop meaning
+anything.</p>
+
+<h4><i>B</i> &mdash; tie-break</h4>
+<p>A small normalised BM25 term, weighted 0.2, which separates passages covering
+identical terms. It is not a fourth signal; it breaks ties.</p>
+
+<h3>13.2 &nbsp; A worked example</h3>
+
+<p>Question: <i>"When do first year classes start?"</i> Terms
+<code>first</code>, <code>year</code>, <code>classes</code>, <code>start</code>.
+Suppose the IDF mass divides 0.1 / 0.1 / 0.3 / 0.5 &mdash; <code>start</code> is
+the rarest and so the most discriminating.</p>
+
+<p>The academic calendar passage reads
+<i>"Commencement of Classes | 10 August 2026"</i>:</p>
+
+<table>
+<tr><th>Term</th><th>Present?</th><th>Contributes to</th><th>Value</th></tr>
+<tr><td><code>classes</code></td><td>Yes, literally</td><td><i>K</i></td><td class="num">0.3</td></tr>
+<tr><td><code>start</code></td><td>No &mdash; but <code>commencement</code> is</td><td><i>W</i></td><td class="num">0.5</td></tr>
+<tr><td><code>first</code>, <code>year</code></td><td>No</td><td>&mdash;</td><td class="num">0</td></tr>
+</table>
+
+<div class="formula">
+<i>R</i> &nbsp;=&nbsp; 1.0(0.3) &nbsp;+&nbsp; 1.0(0.5) &nbsp;+&nbsp; 1.5(0.82)
+&nbsp;=&nbsp; <b>2.03</b>
+</div>
+
+<p>Without the synonym arm this passage scores 0.3 on words and loses to any
+page that happens to repeat "first year classes" without answering the question.
+That bridge is the reason the calendar question works at all, and it is the
+clearest illustration of why the supervisor's half-credit tier belongs in the
+measure.</p>
+
+<h3>13.3 &nbsp; Retrieval in four steps</h3>
+
+<ol>
+<li><b>Gather candidates.</b> BM25 returns its top 60; the embedding returns its
+top 1,200. The candidate pool is their union, so a passage either arm can find
+is scored by all three signals.</li>
+<li><b>Score every candidate</b> on <i>K</i>, <i>W</i> and <i>S</i>, each on a
+0&ndash;1 scale.</li>
+<li><b>Fold in keyword evidence and priors.</b> Section-heading matches,
+identifiers the tokenizer drops, and terms appearing only in a filename
+(<code>II-B.Tech-CSBS-R25.pdf</code> &mdash; its tables never repeat the branch)
+are added to the <i>keyword</i> arm. Wrong-branch passages are multiplied by
+0.35; table-of-contents pages by 0.4.</li>
+<li><b>Take the top five, with a diversity rule.</b> Walk the ranking and skip a
+passage whose document has already contributed its quota &mdash; except for
+rules, course and regulation questions, where one document legitimately owns the
+whole answer and the cap is lifted.</li>
+</ol>
+
+<h3>13.4 &nbsp; Why the weights are not normalised to sum to one</h3>
+
+<p>A sum-to-one presentation &mdash; 0.45 / 0.25 / 0.30 &mdash; is more readable
+and was tested. Two things are true about it. First, normalising weights cannot
+change any ranking: only the <i>ratios</i> matter, so dividing all three by
+their sum is purely cosmetic. Second, those particular ratios are not a
+normalisation of the shipped weights &mdash; they cut semantic from 1.5&times;
+keyword to 0.67&times;, a factor of 2.3 &mdash; and they measure <b>3 points
+worse</b> (80% against 86%).</p>
+
+<p>The shipped weights also depart from coverage's original 1 / 0.5 / 0 ladder in
+one respect: the synonym weight is 1.0, equal to the keyword weight, so a
+synonym match counts as much as a literal one. Coverage uses 0.5 to prevent a
+synonym from outranking a literal hit. In the hybrid the semantic arm breaks
+those ties, so the caution costs more than it saves &mdash; worth 2 points,
+entirely on never-tuned questions. Coverage mode itself is unchanged and still
+selectable.</p>
+</section>
+
+<!-- ============================== 14 ============================== -->
+<section class="sec">
+<h1>14 &nbsp; The WordNet question, answered with numbers</h1>
+
+<p class="lead">WordNet is one of the three signals the project was asked to
+build. It is implemented, live, and carries a non-zero weight. Measured in
+isolation, its marginal contribution on this question set is zero. Both halves
+of that sentence are true and both belong in the report.</p>
+
+<h3>14.1 &nbsp; What is actually implemented</h3>
+
+<p>Synonym expansion runs through <code>nltk.corpus.wordnet</code>: real
+synsets, part-of-speech restricted, sense-ordered, with derivational forms
+included and multi-word lemmas dropped because the lexical index holds single
+tokens. Expansions are gated on the indexed vocabulary &mdash; a synonym that
+appears in no VNRVJIET document is discarded before it can add noise, since it
+could not match anything anyway. Alongside WordNet sits a small hand-curated
+domain map for vocabulary WordNet does not have: <code>commencement</code>,
+<code>condonation</code>, <code>revaluation</code>, <code>backlog</code>,
+<code>sanctioned intake</code>.</p>
+
+<h3>14.2 &nbsp; The isolation measurement</h3>
+
+<p>The two synonym sources were switched off independently, everything else held
+fixed:</p>
+
+<table>
+<tr><th>Configuration</th><th>Hit@5</th><th>Marginal contribution</th></tr>
+<tr><td>Both sources active &mdash; what ships</td><td class="num">84 / 98</td><td>&mdash;</td></tr>
+<tr><td><b>WordNet disabled</b></td><td class="num">84 / 98</td><td class="loss"><b>+0 points</b></td></tr>
+<tr><td>Domain map disabled</td><td class="num">80 / 98</td><td class="win">+4 points</td></tr>
+<tr><td>No synonym matching at all</td><td class="num">80 / 98</td><td>&mdash;</td></tr>
+</table>
+
+<p>WordNet contributes nothing measurable. The hand-built domain map contributes
+four questions. And WordNet <i>alone</i>, with the domain map disabled, scores
+identically to no synonym matching at all &mdash; so this is not a case of two
+sources overlapping and splitting the credit.</p>
+
+<p>The explanation is straightforward once seen: every expansion WordNet gets
+right on this corpus is already in the domain map. <code>start</code> &rarr;
+<code>commencement</code> and <code>rule</code> &rarr; <code>regulation</code>
+are both there, hand-written, because they were needed before WordNet was
+working well enough to supply them.</p>
+
+<h3>14.3 &nbsp; It was improved rather than left as dead weight</h3>
+
+<p>The arm had been restricted to <b>nouns only</b>, and that restriction was
+based on real evidence from 26&nbsp;September: unrestricted expansion was
+overwhelmingly noise, and verbs were the worst of it &mdash; <code>attend</code>
+&rarr; <code>serve</code>, <code>miss</code> &rarr; <code>girl</code>,
+<code>do</code> &rarr; <code>bash</code>. WordNet ranks senses over general
+English, not over academic regulations.</p>
+
+<p>But the questions that need a synonym need a <i>verb</i> one. "When do
+classes <b>start</b>" needs <code>commencement</code>; "can I get my marks
+<b>rechecked</b>" needs <code>revaluation</code>; "exams for <b>failed</b>
+subjects" needs <code>supplementary</code>. And <code>start</code> expanded to
+nothing at all, despite WordNet's <code>start.v.01</code> holding exactly the
+lemmas <code>begin</code> and <code>commence</code> &mdash; because synsets were
+pooled across parts of speech, letting noun senses crowd out the verb reading
+entirely.</p>
+
+<p>The fix is a sense filter rather than a blanket ban, and it comes from
+noticing a pattern in which senses were wrong. Every bad expansion
+&mdash; <code>girl</code>, <code>serve</code>, <code>nine</code>,
+<code>place</code> &mdash; is a <b>common</b> word. Every useful one &mdash;
+<code>commencement</code>, <code>revaluation</code>, <code>condonation</code>,
+<code>supplementary</code> &mdash; is <b>rare</b>. Rarity in this corpus is
+already measured, as IDF:</p>
+
+<div class="formula">
+keep synonym <i>s</i> for term <i>t</i> &nbsp;&hArr;&nbsp;
+idf(<i>s</i>) &nbsp;&ge;&nbsp; &rho; &middot; idf(<i>t</i>)
+</div>
+
+<p>Accept a synonym only if it is at least as discriminating, <i>in this
+corpus</i>, as the word it replaces. A wrong sense is generic by nature and
+fails the gate; a rare technical term passes. Verified against the real IDF map:
+<code>seat</code>&rarr;<code>place</code> and <code>apply</code>&rarr;<code>use</code>
+are now dropped, <code>start</code>&rarr;<code>commencement</code> and
+<code>rule</code>&rarr;<code>regulation</code> kept. The gate is worth one
+point, and it lets verbs back in safely &mdash; at &rho; = 1.0, with &rho; = 1.3
+measuring identically.</p>
+
+<h3>14.4 &nbsp; How to present this honestly</h3>
+
+<p>The temptation is to report that the project implements a three-signal
+hybrid including WordNet-based synonym matching, which is true, and stop there.
+The better claim is the measured one: <i>each arm's marginal contribution was
+isolated, and here is what each is worth.</i> Keyword matching carries 71
+points of the 86. Semantic matching adds 11. Synonym matching adds 4, all of it
+from the domain map, none from WordNet.</p>
+
+<p>That is a stronger result than an unmeasured formula, because it is the kind
+of statement that survives questioning. It also identifies exactly what would
+make WordNet earn its place: a corpus whose vocabulary gaps are not already
+hand-covered, or a domain map small enough that WordNet has room to contribute.
+Neither is true here, and saying so is more useful than implying otherwise.</p>
+</section>
+
+<!-- ============================== 15 ============================== -->
+<section class="sec">
+<h1>15 &nbsp; Where the system stands</h1>
+<p class="kicker">22 October 2026</p>
+
+<table>
+<tr><th>Measure</th><th>Value</th><th>Note</th></tr>
+<tr><td><b>Hit@5, all 98 questions</b></td><td class="num win"><b>86% &mdash; 84/98</b></td><td>Answer present in the five passages shown</td></tr>
+<tr><td>Hit@5, 36 never-tuned questions</td><td class="num">72% &mdash; 26/36</td><td>The unbiased figure</td></tr>
+<tr><td>Answer present in candidate pool</td><td class="num">99%</td><td>Nothing is unreachable</td></tr>
+<tr><td>Answer survives into prompt text</td><td class="num">86%</td><td>Equals Hit@5 &mdash; no loss after ranking</td></tr>
+<tr><td>Retrieval latency</td><td class="num">~0.2 s / query</td><td>Union pool, 1,200 deep</td></tr>
+<tr><td>Generation</td><td class="num">14.70 tok/s</td><td>Q6_K, CPU, 20 threads</td></tr>
+<tr><td>Corpus</td><td class="num">104,965 passages</td><td>3,297 documents, 0 parse failures</td></tr>
+<tr><td>Answer-level accuracy</td><td class="num loss">~64%, stale</td><td>Last measured before the 22 October fixes</td></tr>
+</table>
+
+<h3>15.1 &nbsp; What moved the number on 22 October</h3>
+
+<p>Three changes took Hit@5 from 83% to 86%, and closed a leak that had been
+costing far more than that:</p>
+
+<ol>
+<li><b>The prompt-assembly leak</b> (section&nbsp;12.3). Answer-in-prompt went
+from 69% to 86%. This is the largest effect of the day by a wide margin: it did
+not raise Hit@5, it made Hit@5 <i>true</i>.</li>
+<li><b>Synonym weight and the IDF gate</b> (sections&nbsp;12.5, 14.3). +3
+points, all on never-tuned questions.</li>
+<li><b>The configuration split</b> (section&nbsp;12.4). No effect on the
+measured number; it made the measured number apply to the deployed system.</li>
+</ol>
+
+<p>Two chunker defects were also fixed (section&nbsp;6.2). They affect future
+extractions and do not change today's figures.</p>
+
+<h3>15.2 &nbsp; The fourteen questions that still fail</h3>
+
+<p>All fourteen have their answer in the candidate pool. Where it sits in the
+final ranking determines what would be needed to recover it:</p>
+
+<table>
+<tr><th>Gold rank</th><th>Questions</th><th>What would recover them</th></tr>
+<tr><td>6&ndash;8</td><td class="num">4</td><td>A modest ordering gain &mdash; or showing 8 passages instead of 5</td></tr>
+<tr><td>13&ndash;19</td><td class="num">5</td><td>Finer chunking; score dilution is the suspected cause</td></tr>
+<tr><td>25&ndash;30</td><td class="num">3</td><td>Finer chunking</td></tr>
+<tr><td>Below 200</td><td class="num">2</td><td>Structural &mdash; one page is a single undivided blob</td></tr>
+</table>
+
+<p>Four questions short of 90%, nine short of 95%. The four nearest all sit at
+ranks 6 to 8, which is tantalisingly close and also exactly the band that eleven
+separate re-ranking attempts have failed to reach.</p>
+</section>
+
+<!-- ============================== 16 ============================== -->
+<section class="sec">
+<h1>16 &nbsp; What is not done</h1>
+
+<p class="lead">The numbers in this report are worth only what their caveats
+allow, so the caveats are stated at the same volume.</p>
+
+<h3>16.1 &nbsp; Answer accuracy is not Hit@5, and it is much lower</h3>
+
+<p>Hit@5 says the answer was retrieved. Whether the model then wrote it down
+correctly is a separate question with a worse answer: <b>57% by strict pattern
+match</b> over the 98 questions, and roughly <b>64%</b> after hand-grading all
+42 failures (7 were correct answers the pattern scored wrong, 4 were genuinely
+ambiguous, 31 were wrong). That measurement predates the 22&nbsp;October fixes
+and has not been repeated, because it requires the model server and about thirty
+minutes. It should be the next thing run.</p>
+
+<p>Of the 42 failures, the classes were: 17 retrieval misses, 8 table-reading
+failures where the model could not extract a value from a flattened table, and 8
+abstentions where the answer sat in the prompt but the model refused anyway.</p>
+
+<h3>16.2 &nbsp; The accuracy targets are not met</h3>
+
+<p>The target was 90%, then 95%. Hit@5 is 86%: 90% needs 88 of 98, 95% needs 93.
+Because the answer is in the pool for 99% of questions, both remain reachable in
+principle. Neither is reachable by weight tuning, which is exhausted.</p>
+
+<h3>16.3 &nbsp; Eleven ordering ideas measured and rejected</h3>
+
+<p>Recorded with the number that killed each, so that none is attempted twice:</p>
+
+<table>
+<tr><th>Idea</th><th>Result</th></tr>
+<tr><td>Cross-encoder re-ranking</td><td class="num">73%, and 664 ms/query</td></tr>
+<tr><td>Best-sentence re-ranking of the leaders</td><td class="num">81%</td></tr>
+<tr><td>Section-overview / hub-page bonus</td><td class="num">83%, Hit@3 worse</td></tr>
+<tr><td>IDF raised to a power</td><td class="num">flat at 1.5, 2, 3</td></tr>
+<tr><td>Reciprocal-rank fusion of the arms</td><td class="num">72%</td></tr>
+<tr><td>Enumeration / repetition bonus</td><td class="num">83%, then 81%</td></tr>
+<tr><td>Additional domain synonyms</td><td class="num">flat</td></tr>
+<tr><td>Larger dense pool under the old design</td><td class="num">flat</td></tr>
+<tr><td>Prompt re-ordering by best sentence</td><td class="num">identical, 23/26</td></tr>
+<tr><td>Per-document caps</td><td class="num">79% against 83%</td></tr>
+<tr><td>Weights normalised to sum to 1</td><td class="num">80%</td></tr>
+</table>
+
+<p>The reason this list is so uniformly negative is diagnostic rather than bad
+luck. In 6 of 12 reachable misses, the passage that wins covers <i>more</i> of
+the question than the passage holding the answer &mdash; often all of it. "In
+which area of Hyderabad is the campus" is answered on one page scoring 0.64 and
+loses to another scoring 1.00, because the answer is a place name the question
+cannot contain. No reweighting of query terms fixes that; the winner really is a
+better match for the words asked. The problem is not the ordering function.</p>
+
+<h3>16.4 &nbsp; The most likely remaining lever is chunk granularity</h3>
+
+<p>Gold passages are 1,100 characters and the answer is one sentence inside
+them, so every signal scores the answer against roughly 900 characters of
+unrelated text in the same passage. The chunker packs multiple paragraphs up to
+that cap by design (section&nbsp;6.1).</p>
+
+<p>An earlier structural-chunking experiment at finer granularity measured
+<b>better at Hit@5 &mdash; 74% against 72%</b> &mdash; but worse at greater
+depth, and was rejected on the deeper numbers. For a system that only ever shows
+five passages, the deeper numbers do not matter, so that rejection used the wrong
+criterion. It is the only lever that has ever improved Hit@5 specifically.</p>
+
+<p>It requires a re-extraction and a re-index &mdash; hours of unattended
+compute &mdash; and it remains a genuine bet rather than a certainty.</p>
+
+<h3>16.5 &nbsp; Known measurement weaknesses</h3>
+
+<ul>
+<li>98 questions is a small set, and 62 of them were written while retrieval was
+being tuned. Only the 36 never-tuned questions give an unbiased reading, and
+there the figure is 72%, not 86%.</li>
+<li>The gold patterns test whether the answer <i>text</i> was retrieved, not
+whether a reader would judge the generated answer correct. Seven of the 42
+answer-level failures were correct answers scored wrong by their pattern.</li>
+<li>One extraction defect is unfixed: OCR misreads superscript ordinals in
+scanned PDFs, so <code>06th January</code> becomes <code>06m January</code>. A
+reader sees past it; a keyword match cannot.</li>
+<li>Authentication is a role simulation, not an identity system.</li>
+<li>The fine-tuned adapters that were scored are the final training step, not
+the best checkpoint, so every fine-tuning figure is a lower bound
+(section&nbsp;9.7).</li>
+</ul>
+</section>
+
+<!-- ============================== 17 ============================== -->
+<section class="sec">
+<h1>17 &nbsp; What the project taught about method</h1>
+
+<p class="lead">The technical content of this report is a retrieval system and a
+compressed model. Its more transferable content is four occasions on which a
+measurement was confidently wrong, and what each one had in common.</p>
+
+<h3>17.1 &nbsp; Six measurements that agreed, and all measured nothing</h3>
+
+<p>The per-document cap &mdash; how many passages a single document may
+contribute to the five shown &mdash; was measured six times with different
+settings. All six agreed. The agreement was meaningless.</p>
+
+<p>The harness used retrieves at depth 100, and the caps scale with the number
+of passages requested, so at depth 100 they never bind. Six settings produced
+identical results because not one of them exercised the thing being varied. The
+error surfaced only when a question whose answer sat at rank 5 nonetheless
+produced an abstention &mdash; a result impossible under any of the six readings.
+Re-measured with a harness that retrieves the way the application does, the
+capped and uncapped configurations differ by four points.</p>
+
+<p>The lesson is narrow and worth stating precisely: <b>agreement between
+measurements is not evidence of correctness.</b> Six consistent results are also
+what a broken instrument produces.</p>
+
+<h3>17.2 &nbsp; The same error class, four times</h3>
+
+<p>Four defects in this report share a structure: the system produced output
+that looked correct while operating on the wrong thing.</p>
+
+<table>
+<tr><th>Defect</th><th>What it reported</th><th>What was true</th></tr>
+<tr><td>Stale dense cache</td><td>Passages retrieved</td><td>Embeddings described the old text</td></tr>
+<tr><td>Vector misalignment</td><td>Plausible semantic scores</td><td>Wrong passages, consistently</td></tr>
+<tr><td>Image-only PDFs</td><td>672 of 672 processed</td><td>25 contributed nothing</td></tr>
+<tr><td>Cap measured at depth 100</td><td>Six consistent results</td><td>The cap never engaged</td></tr>
+<tr><td>Prompt trimming filter</td><td>Hit@5 83%</td><td>The model saw the answer 69% of the time</td></tr>
+</table>
+
+<p>None raised an exception. Each would pass a test asserting that results come
+back. What catches this class of defect is not more tests of that kind but a
+different question: <i>was the thing I am measuring actually exercised?</i></p>
+
+<h3>17.3 &nbsp; Pre-registration did real work exactly once</h3>
+
+<p>The quantization selection rule &mdash; quality, then size, then speed &mdash;
+was written before any build was measured. It earned its keep when Q4_K_M turned
+out smaller and faster and broke abstention on two of 147 items. Written
+afterwards, the rule would almost certainly have accommodated "two items is
+within noise".</p>
+
+<p>The inverse also appears. The retrieval benchmark was built before components
+were compared, which the project's own phase gates require &mdash; but building
+it first did not make it valid, and its invalidity cost three weeks of work
+optimising against a signal weighting it had wrongly recommended. Order of
+operations is not a substitute for construct validity.</p>
+
+<h3>17.4 &nbsp; Recording what failed</h3>
+
+<p>The decision log keeps superseded entries, failed attempts and corrections
+rather than editing them out: three hardware decisions superseded when the
+machine changed, two failed fixes for the same VRAM ceiling, a resolution
+downgraded the next day to "insufficient", two design-document predictions
+refuted by their own experiment, and an explicit correction retracting an earlier
+claim about per-document caps.</p>
+
+<p>This has been useful in a specific, repeated way. Twice, an idea that seemed
+new turned out to be recorded as already measured and rejected, with the number
+attached. The log did not merely document the work; it prevented a measurable
+amount of it from being done twice.</p>
+</section>
+
+<!-- ============================== APPENDIX A ============================== -->
+<section class="sec">
+<h1>Appendix A &nbsp; Full dated timeline</h1>
+
+<p><small>Dates from the repository's commit history
+(github.com/nvaishnavisriyaa/VJLM) and the dated entries of
+<code>DECISIONS.md</code>.</small></p>
+
+<table>
+<tr><th>Date</th><th>Commit / record</th><th>Event</th></tr>
+<tr><td>16 Sep</td><td><code>6c7c22b</code></td><td>Phase 0 &mdash; repository foundation</td></tr>
+<tr><td>16 Sep</td><td><code>33bcbd6</code></td><td>Ingestion dependency policy (INGEST-001); Colab operating arrangement</td></tr>
+<tr><td>16 Sep</td><td><code>ab8ddfd</code></td><td>Phase 1 &mdash; site reconnaissance; the docs-subdomain blocker</td></tr>
+<tr><td>16 Sep</td><td><code>e4a02d1</code></td><td>Phase 2 &mdash; fine-tune vs RAG classification, 14 categories</td></tr>
+<tr><td>16 Sep</td><td><code>d7461a9</code></td><td>Working pipeline: discovery, fetch, extract, index, serving app</td></tr>
+<tr><td>16 Sep</td><td><code>0408f2d</code></td><td>Layer 1 enrichment; 39&times; local inference regression fixed</td></tr>
+<tr><td>16 Sep</td><td><code>86fc35f</code></td><td>Self-contained Colab pipeline; generation evaluation harness</td></tr>
+<tr><td>17 Sep</td><td><code>d085088</code></td><td>HANDOFF for the move to a GPU machine; platform binaries untracked</td></tr>
+<tr><td>17 Sep</td><td><code>605dd33</code></td><td>Master plan, source document and architecture figures</td></tr>
+<tr><td>17 Sep</td><td><code>1f9835b</code></td><td><b>Train/test leakage fixed</b> in the fine-tuning dataset</td></tr>
+<tr><td>17 Sep</td><td><code>d304482</code></td><td>Self-maintaining pipeline: app-driven refresh, headless rendering</td></tr>
+<tr><td>17 Sep</td><td><code>d6d8e40</code></td><td>First full end-to-end run; first dense index</td></tr>
+<tr><td>17 Sep</td><td><code>ceefbd7</code></td><td><b>Stale-vector bug</b> in the dense cache fixed; rendering hardened</td></tr>
+<tr><td>17 Sep</td><td><code>478183a</code></td><td>Freshness gated on the deploy signal, with a floor</td></tr>
+<tr><td>18 Sep</td><td><code>9929c78</code></td><td>Phase 8 &mdash; Mistral-7B QLoRA trained and scored; long runs made survivable</td></tr>
+<tr><td>18 Sep</td><td><code>acfcc1f</code></td><td>Arm A scored &mdash; <b>the 3B model matches the 7B</b></td></tr>
+<tr><td>18 Sep</td><td>SLM-001, FT-002/003</td><td>Base model and method decided; three earlier entries superseded</td></tr>
+<tr><td>19 Sep</td><td><code>8ba385e</code></td><td>Arm C exceeds 16 GB &mdash; QLoRA costs more VRAM than LoRA here</td></tr>
+<tr><td>19 Sep</td><td><code>4958b97</code></td><td>First fix attempt: keep the frozen head out of fp32</td></tr>
+<tr><td>19 Sep</td><td><code>33e389c</code></td><td>FT-005 corrected &mdash; that fix was insufficient, not a resolution</td></tr>
+<tr><td>19 Sep</td><td><code>8158aa0</code></td><td><b>Phase 8 complete</b> &mdash; LoRA vs QLoRA is a wash on quality</td></tr>
+<tr><td>19 Sep</td><td><code>468581f</code></td><td>Recorded: the lowest-loss checkpoint is not the better model</td></tr>
+<tr><td>21 Sep</td><td><code>1874e4c</code></td><td>Phase 9 &mdash; compress for CPU; adapters published</td></tr>
+<tr><td>21 Sep</td><td><code>27bc9b7</code></td><td><b>Phase 9 complete</b> &mdash; the two models needed different compression</td></tr>
+<tr><td>21 Sep</td><td><code>ff1540a</code></td><td>GGUF builds ship from Hugging Face, not GitHub</td></tr>
+<tr><td>26 Sep</td><td>RAG-SIM-001</td><td>Eight similarity modes on 90 questions; coverage selected; two design predictions refuted</td></tr>
+<tr><td>26 Sep</td><td>paraphrase_probe</td><td>Unrestricted WordNet expansion shown to be noise; nouns-only adopted</td></tr>
+<tr><td>30 Sep</td><td>CORPUS-001</td><td><b>Corpus holds almost no student-policy content</b>; classifier at fault</td></tr>
+<tr><td>30 Sep</td><td>INGEST-003</td><td>25 of 672 PDFs have no text layer; OCR added; space-dropping repaired</td></tr>
+<tr><td>30 Sep</td><td>RAG-IDX-001</td><td><b>Dense vectors misaligned with the lexical index</b></td></tr>
+<tr><td>12 Oct</td><td><code>8e50fab</code></td><td>Dropped query terms recovered; answer instead of refuse; coverage as default</td></tr>
+<tr><td>17 Oct</td><td>&mdash;</td><td>Corpus rebuilt: 104,965 passages, 3,297 documents, 0 parse failures</td></tr>
+<tr><td>18 Oct</td><td>RAG-EVAL-004/005</td><td>Three-signal fusion; union pool; pool deepened to 1,200; branch mismatch penalised; six variants rejected</td></tr>
+<tr><td>22 Oct</td><td>&mdash;</td><td><b>14-point prompt leak fixed</b>; IDF-gated WordNet; 36-config sweep; corpus audit; chunker defects fixed</td></tr>
+</table>
+</section>
+
+<!-- ============================== APPENDIX B ============================== -->
+<section class="sec">
+<h1>Appendix B &nbsp; Every rejected experiment</h1>
+
+<p class="lead">Each with the measurement that ended it. Recorded so that no
+idea here is tried a second time, and so that the shipped configuration can be
+read as the survivor of a search rather than a guess.</p>
+
+<h3>Retrieval ordering</h3>
+<table>
+<tr><th>Idea</th><th>Measured</th><th>Date</th></tr>
+<tr><td>Cross-encoder re-ranking of the top candidates</td><td class="num">Hit@5 73%; 664 ms/query</td><td>18 Oct</td></tr>
+<tr><td>Best-sentence re-ranking of the leaders</td><td class="num">81% at weight 1.0; 79% at 2.0</td><td>18 Oct</td></tr>
+<tr><td>Section-overview / hub-page bonus</td><td class="num">83% unchanged; Hit@3 77% &rarr; 74%</td><td>18 Oct</td></tr>
+<tr><td>IDF raised to a power</td><td class="num">flat at 1.5, 2 and 3</td><td>18 Oct</td></tr>
+<tr><td>Reciprocal-rank fusion instead of a weighted sum</td><td class="num">72%</td><td>18 Oct</td></tr>
+<tr><td>Enumeration / repetition bonus for list questions</td><td class="num">83%, then 81%</td><td>18 Oct</td></tr>
+<tr><td>Additional hand-written domain synonyms</td><td class="num">flat</td><td>18 Oct</td></tr>
+<tr><td>Larger dense pool under the BM25-only pool design</td><td class="num">flat</td><td>18 Oct</td></tr>
+<tr><td>Ordering the chosen passages by best sentence</td><td class="num">identical &mdash; 23/26, same failures</td><td>18 Oct</td></tr>
+<tr><td>Per-document caps on the five shown</td><td class="num">79% against 83% uncapped</td><td>22 Oct</td></tr>
+<tr><td>Weights normalised to sum to 1 (0.45/0.25/0.30)</td><td class="num">80% against 86%</td><td>22 Oct</td></tr>
+<tr><td>WordNet part-of-speech widening; slot cap 6; gate 1.3</td><td class="num">all identical to the shipped setting</td><td>22 Oct</td></tr>
+</table>
+
+<h3>Passage count and prompt</h3>
+<table>
+<tr><th>Idea</th><th>Measured</th><th>Date</th></tr>
+<tr><td>10 passages instead of 5</td><td class="num">end-to-end 22/26 against 23/26; +36% latency</td><td>18 Oct</td></tr>
+<tr><td>20 passages instead of 5</td><td class="num">17/26</td><td>18 Oct</td></tr>
+<tr><td>Prompt budget beyond 5,000 characters</td><td class="num">6,500 and 9,000 measured identical</td><td>22 Oct</td></tr>
+</table>
+
+<h3>Embedding and chunking</h3>
+<table>
+<tr><th>Idea</th><th>Measured</th><th>Date</th></tr>
+<tr><td>snowflake-arctic-embed-xs in place of bge-small</td><td class="num">76% against 77%</td><td>18 Oct</td></tr>
+<tr><td>Corpus-wide normalisation of semantic scores</td><td class="num">rejected &mdash; candidates collapse near 1.0 or 0</td><td>18 Oct</td></tr>
+<tr><td>Structural chunking (v2)</td><td class="num">@5 74% vs 72%, but @20 80% vs 84%</td><td>18 Oct</td></tr>
+</table>
+
+<h3>Model and compression</h3>
+<table>
+<tr><th>Idea</th><th>Measured</th><th>Date</th></tr>
+<tr><td>Mistral-7B as the deployed model</td><td class="num">0.7654 vs 0.7567, at 3&times; training cost and half the speed</td><td>18 Sep</td></tr>
+<tr><td>QLoRA for the 3B deployment arm</td><td class="num">quality identical; 42% slower to train</td><td>19 Sep</td></tr>
+<tr><td>Q4_K_M quantization</td><td class="num loss">breaks abstention &mdash; answers 2 it must refuse</td><td>21 Sep</td></tr>
+<tr><td>Content-hash change detection</td><td class="num">every source changes on every deploy</td><td>17 Sep</td></tr>
+</table>
+</section>
+
+<!-- ============================== APPENDIX C ============================== -->
+<section class="sec">
+<h1>Appendix C &nbsp; Repository map</h1>
+
+<table>
+<tr><th>Path</th><th>Contents</th></tr>
+<tr><td><code>configs/</code></td><td>Versioned configuration &mdash; no hard-coded paths or model names</td></tr>
+<tr><td><code>data_catalog/</code></td><td>Source classification: fine-tune / RAG / both / neither</td></tr>
+<tr><td><code>ingestion/</code></td><td>Registry, crawler, raw snapshots, per-source sync state</td></tr>
+<tr><td><code>preprocessing/</code></td><td>Two pipelines: RAG chunking, and fine-tuning dataset building</td></tr>
+<tr><td><code>rag/</code></td><td>Embedding, index, retrieval, scoring, prompt assembly</td></tr>
+<tr><td><code>evaluation/</code></td><td>Question sets, harnesses, ablations, diagnostics</td></tr>
+<tr><td><code>training/</code></td><td>Datasets, notebooks, adapters</td></tr>
+<tr><td><code>quantization/</code></td><td>GGUF conversion and quality / speed / RAM measurements</td></tr>
+<tr><td><code>auth/</code></td><td>Authentication and RBAC policy</td></tr>
+<tr><td><code>app/</code></td><td>Backend API and the student / faculty interface</td></tr>
+<tr><td><code>experiments/</code></td><td>Reproducible runs and raw results</td></tr>
+<tr><td><code>docs/</code></td><td>Hardware profile, runbooks, phase deliverables, this report</td></tr>
+<tr><td><code>DECISIONS.md</code></td><td>~1,600 lines: every decision with the measurement behind it</td></tr>
+</table>
+
+<h3>Key modules</h3>
+<table>
+<tr><th>File</th><th>Role</th></tr>
+<tr><td><code>rag/retrieve.py</code></td><td>The three-signal scorer, candidate union, caps, prompt assembly</td></tr>
+<tr><td><code>rag/coverage.py</code></td><td>The supervisor's IDF-weighted term ladder</td></tr>
+<tr><td><code>rag/synonyms.py</code></td><td>WordNet expansion, the IDF gate, the domain map</td></tr>
+<tr><td><code>rag/scope.py</code></td><td>Role and branch priors, query parsing, document profiles</td></tr>
+<tr><td><code>rag/focus.py</code></td><td>Per-passage trimming &mdash; the 14-point leak lived here</td></tr>
+<tr><td><code>preprocessing/extract.py</code></td><td>Parsing, OCR fallback, chunking</td></tr>
+<tr><td><code>preprocessing/enrich.py</code></td><td>Metadata, redaction, deduplication</td></tr>
+</table>
+
+<h3>Evaluation harnesses written during this work</h3>
+<table>
+<tr><th>Harness</th><th>Question it answers</th></tr>
+<tr><td><code>hit_at_prompt.py</code></td><td>Hit@5 with the per-document caps actually binding</td></tr>
+<tr><td><code>hit_in_prompt_text.py</code></td><td>Does the answer survive trimming into the prompt?</td></tr>
+<tr><td><code>ablation.py</code></td><td>What is each of the three signals worth?</td></tr>
+<tr><td><code>sweep_wordnet.py</code></td><td>Part of speech &times; IDF gate &times; slot cap &times; synonym weight</td></tr>
+<tr><td><code>audit_corpus.py</code></td><td>Is the knowledge base at fault, or is retrieval?</td></tr>
+<tr><td><code>probe_wordnet.py</code></td><td>What does the IDF gate keep and drop, on the real corpus?</td></tr>
+<tr><td><code>why_miss.py</code></td><td>Which arm is responsible for each miss?</td></tr>
+<tr><td><code>diagnose_misses.py</code></td><td>Recall problem or ranking problem?</td></tr>
+<tr><td><code>depth_curve.py</code></td><td>Hit@k across depth</td></tr>
+<tr><td><code>screen_embedders.py</code></td><td>Candidate embedding models, without re-embedding the corpus</td></tr>
+</table>
+
+<p style="margin-top:12mm"><small>VJLM &mdash; Vignana Jyothi Language Model.
+Report compiled 22 October 2026 from the repository's commit history, decision
+log and recorded experiment results. All figures in this document are
+measurements taken on the system described; where a figure is stale or
+uncertain, the text says so.</small></p>
+</section>
+
+</body>
+</html>
