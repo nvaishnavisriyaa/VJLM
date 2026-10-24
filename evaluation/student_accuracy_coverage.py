@@ -7,7 +7,7 @@ should be among the cited sources). Unanswerable questions must be refused.
 Scoring per question: retrieval hit (src cited), answer correct (gold in answer),
 and for unanswerable: abstained. Results -> experiments/student_accuracy_coverage.jsonl
 """
-import json, re, sys, time, urllib.request
+import json, os, re, sys, time, urllib.request
 
 URL = "http://127.0.0.1:7860/api/ask"
 ABSTAIN = "could not find this"
@@ -45,8 +45,13 @@ Q = [
  ("unanswerable", "Who won the IPL in 2020?", None, None),
 ]
 
+# The retriever under test. Coverage was the default when this file was
+# written; fusion (keyword + synonym + semantic) replaced it, so the mode is
+# a parameter and every recorded run says which one it measured.
+MODE = os.environ.get("VJLM_EVAL_MODE", "fusion")
+
 def ask(q):
-    body = json.dumps({"question": q, "q": q, "query": q, "role": "student", "mode": "coverage"}).encode()
+    body = json.dumps({"question": q, "q": q, "query": q, "role": "student", "mode": MODE}).encode()
     req = urllib.request.Request(URL, body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=900) as r:
         return json.load(r)

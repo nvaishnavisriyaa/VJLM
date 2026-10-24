@@ -1302,3 +1302,292 @@ citations rather than either being asserted.
 Also found: sync_state.json has two concurrent writers. The live refresher wrote its
 whole in-memory state over the date backfill's results and erased them. backfill_dates.py
 now re-reads and merges before writing; the refresher itself still has the race.
+
+
+## RAG-EVAL-003: coverage is the default retriever; three fixes on top of it
+
+Coverage (sir's 1 / 0.5 / 0 synonym weighting, scope-adjusted) was already the best
+measured mode (RAG-EVAL-002: 84% hit@5 vs hybrid3 74%, hybrid 69%, dense 63%) but the
+server, the UI and `Retriever.search` still defaulted to `hybrid`, and fell back to BM25
+when the dense index was missing. All three now default to coverage, and the fallback is
+coverage. No retraining, no re-indexing.
+
+Failure analysis of the 9 misses (hit@5 on 62 questions) found three causes that were
+about the retriever, not the data:
+
+1. Question scaffolding scored as content. IDF measures rarity in a rulebook that says
+   "shall", so "does" (5.33), "many" (5.02) and "have" (3.47) came out RARER than "naac"
+   (4.25). "What NAAC grade does VNRVJIET have?" ranked a grading-rules chunk (grade +
+   does + have = 0.75 coverage) above the accreditation page. `scope.QUESTION_SCAFFOLD`
+   (does did many much have has there stand stands mean means) is dropped from the query
+   only. A wider list (do, get, give, any, tell ...) broke r11 and r12 and was rejected.
+2. A document's identity can live only in its file name. The CSBS course tables never
+   say "CSBS"; `II-B.Tech-CSBS-R25.pdf` does, so all branches tied. A query term found in
+   the chunk's URL now adds `W["url"]` (0.6) x its IDF share, only to chunks that already
+   cover something.
+3. Definition questions ("what does SGPA stand for") are answered by the abbreviation
+   table, which mentions the term once and so loses to the many chunks that use it. A
+   definition-intent query adds the glossary chunks to the candidate pool and gives those
+   that contain the identifier `W["glossary"]` (0.6).
+
+Measured, 62 questions, coverage, hit@5 / hit@1 / MRR:
+  before   85% / 56% / 0.697
+  1 only   87% / 58% / 0.713
+  1 + 3    89% / 60% / 0.729
+  1 + 2 + 3 90% / 63% / 0.759     (dev 92%, hold 94%, test 86%; no question got worse)
+Tried and not kept: extra domain synonyms (carry, repeat, miss, clubs): no change.
+
+End-to-end (26 questions, deterministic) first dropped 24 -> 23: Q7 (tuition fee) kept
+its retrieval hit but the model copied the table caption, not the sentence holding the
+figure. The passage's own best-matching sentence scored 1.0 against the question.
+`focus.supplement` step 1c now appends that sentence when the answer left it out (score
+>= 0.9, one sentence). Result: 24/26 = 92% again (answerable 20/22, literal 12/12,
+unanswerable 4/4).
+
+Still failing: Q19 (no-dues clearances: the form is in the corpus but the question's rare
+word "clearances" is absent from it; a clearance->certificate/dues synonym moves it from
+rank 12 to 6, not into the top 5) and Q20 (calendar PDF extraction). Remaining retrieval
+misses: r03, r13, l02, k01, d02, h17. The 62-question set was used to find these
+causes, so the 90% is a development figure; the e2e set is separate.
+
+---
+
+### RAG-EVAL-004 - three-signal fusion, and what the semantic arm is actually for
+2026-10-18
+
+The hybrid is now the three weighted signals the design calls for, not two:
+`FUSION = (keyword, WordNet synonym, semantic) = (1.0, 0.5, 1.5)`, all non-zero,
+in `rag/retrieve.py` under `mode="fusion"`. `scope.cover_parts()` is what made
+this possible: coverage used to return one number for "term or synonym", so
+keyword and synonym evidence could not carry different weights. It now returns
+the two shares of the query's IDF mass separately.
+
+Two findings, both of which cost real accuracy before they were fixed:
+
+1. **The embeddings were never retrieving anything.** The candidate pool was
+   built from the BM25 ranking, so coverage and cosine only ever RE-RANKED what
+   keyword matching had already found. `evaluation/diagnose_misses.py` put 14 of
+   25 misses at BM25 rank 300-9000 - unreachable at any weighting - while cosine
+   ranked those same chunks 2nd, 16th, 22nd, 37th. The reverse also happens
+   ("leftover food at the hostels": BM25 7, cosine 908), so neither arm can own
+   the pool. The pool is now the UNION of the BM25 ranking and the cosine top
+   300 (`VJLM_DENSE_POOL`), and every candidate is scored by all three signals.
+2. **The per-document caps were a recall ceiling.** Three chunks of a rulebook
+   and one of a syllabus PDF was a presentation rule for a 5-passage prompt, but
+   it applied at every depth: a clause ranked 4th within the R25 PDF could not
+   be returned at ANY topk. Lifting the caps moved hit@5 79% -> 83% and hit@100
+   89% -> 95%. Reserving even ONE slot for a second source cost 2 points, so no
+   slot is reserved.
+
+Measured on 98 questions (62 tuned + 36 written from the corpus and never tuned
+on), `evaluation/depth_curve.py`:
+
+              @1    @3    @5    @10   @20   @50   @100
+  coverage    -     -     74%   79%   84%   87%   88%
+  fusion      58%   77%   83%   88%   92%   95%   95%
+
+**Six attempts to convert hit@20 into hit@5 were all rejected by measurement**,
+which is why the gap is still there and why it should not be attacked again
+without a new idea:
+
+  - cross-encoder rerank (ms-marco-MiniLM-L-6-v2): 83% -> 73%, 664 ms/query
+  - best-sentence rerank of the leaders: 81% at weight 1.0, 79% at 2.0
+  - bonus for section-overview pages, derived from the URL tree: 83%, unchanged
+  - IDF raised to a power, to favour the rare term: flat 83% at 1.5, 2.0, 3.0
+  - extra domain synonyms: no change
+  - larger dense pool (300 vs 100) in the old BM25-only design: no gain
+
+`evaluation/why_miss.py` says why, per arm. In 6 of 12 reachable misses the
+chunk that wins covers MORE of the question than the chunk holding the answer -
+often all of it. "In which area of Hyderabad is the campus?" is answered on
+/about, which covers 0.64 of the question, and lost to /campus-life, which
+covers 1.00, because the answer is a place name the question cannot contain.
+No reweighting of the question's terms can fix that; the winning page really is
+a better match for the words asked.
+
+**Embedding model: `BAAI/bge-small-en-v1.5` stays.** `evaluation/screen_embedders.py`
+re-scored the pools with each candidate: bge-small 77%, arctic-embed-xs 76%,
+and the larger builds cannot be fetched on this machine (Windows symlink
+privilege). A BGE query instruction prefix (`VJLM_QPREFIX`) is a small, free
+gain and is on. Semantic scores are min-maxed over the CANDIDATES, not a
+corpus-wide percentile, so all three arms span 0-1 and the weights compare.
+
+**The prompt's character budget is now fixed** (`PROMPT_CHARS`, 3250 = the old
+5 x 650) and the passage count is `VJLM_TOPK`. Carrying more passages therefore
+costs no context, no latency and no memory - each is trimmed harder by
+`rag/focus.py`, which keeps the sentences matching the question. Since the
+answer is in the top 10 for 88% of questions and the top 20 for 92%, showing
+the model more of what retrieval already found is the cheap lever that the six
+reranking attempts were not.
+
+**Retrieval depth and prompt diversity are two different jobs** (2026-10-18).
+Lifting the per-document caps raised hit@5 79% -> 83%, and the end-to-end test
+then fell 24/26 -> 22/26 for a reason hit@5 cannot see: with no cap, ONE
+document monopolises the prompt. "Where can I study quietly and borrow books"
+returned four passages of `Adminstrative Manual.pdf` and never showed the
+library page; "how many credits is Design and Analysis of Algorithms in CSBS"
+showed four different branches' syllabus tables and the model answered from the
+wrong branch. The cap is now a SHARE of topk (`DOC_CAP_FRAC`, 0.4) with a floor
+of 2, so it binds on a 5-passage prompt and vanishes at evaluation depth. That
+costs retrieval nothing - hit@5/@10/@20/@100 are 83/89/94/98% at cap 1.0, 0.6
+and 0.4 alike - so the damage was never caused by capping, but by the FIXED
+per-family values it used (one chunk per syllabus PDF, three per rulebook).
+
+**Reciprocal-rank fusion: rejected.** Combining the three arms by rank instead
+of by weighted score is scale-free and is the textbook way to mix a hybrid, so
+it was worth one measurement: hit@5 83% -> 72%, hit@1 58% -> 44% (`VJLM_RRF`,
+kept at 0). The arms' magnitudes carry information that ranks discard - how
+MUCH of the query a chunk covers is the signal, not merely that it covers more
+than the next chunk. That is the seventh ordering idea rejected by measurement.
+
+**Branch mismatch is now penalised like regulation mismatch** (2026-10-18).
+`scope.parse_query` knew the programme (B.Tech / M.Tech / MCA) but not the
+BRANCH, so the four near-identical syllabus PDFs of CSBS, IOT, CYS and AIDS were
+separated only by a weak file-name term bonus. "How many credits is Design and
+Analysis of Algorithms in CSBS" retrieved the right document AND answered from
+the wrong branch, which is a failure hit@5 scores as a success. A question that
+names a branch now boosts that branch's documents (`branch_match` 1.5) and
+penalises another branch's (`branch_mismatch` 0.35), leaving documents of no
+particular branch untouched - the same shape as the regulation priors in
+RAG-SCOPE-001. The branch comes from the enriched `department` field where it
+exists (38k chunks) and from the file name otherwise, which is the only place a
+syllabus PDF names its branch. Retrieval is unchanged by it (hit@5 83%, hit@1
+58% -> 60%), which is expected: what it fixes is what reaches the prompt.
+
+**Enumeration bonus: rejected.** An enumeration page answers a "which X" question
+by repeating X - /campus-life/clubs says "club" a dozen times while listing them
+and shares nothing else with "which societies and clubs can I join" - so it was
+ranked below forty individual club pages. Coverage measures breadth and counts
+each term once, by design, so an IDF-weighted repetition bonus was added behind
+`W["enum"]` for list-intent questions: hit@5 83% at weight 0.5 (unchanged) and
+81% at 1.0. Kept at 0. Eighth ordering idea rejected by measurement.
+
+**The two questions retrieval cannot reach at all, diagnosed** (deep pool, 98
+questions, hit@100 98%): `k01` is an ORDERING failure, not recall - the clubs
+index sits at cosine rank 511, inside the 1200 pool, and simply scores below the
+individual club pages. `n31` ("which bodies has the college been approved by")
+is a CHUNKING failure: the whole /about page is one chunk of landing-page copy
+with "approved by AICTE" buried in it, at cosine rank 24643. No weighting
+reaches that; splitting the page by its headings is the only fix, which is what
+the structural chunker is for.
+
+**The calendars' vocabulary bridge** (2026-10-18). Both failing calendar
+questions - the end-to-end Q20 and d02 - had the right page extracted, the OCR
+readable and the dates present ("06th July 2026"), and still missed: the student
+writes "when do classes START for SECOND year", the calendar says "Commencement
+of Class Work" for "B.Tech. II Year". start/begin -> commencement and
+second/third/fourth -> ii/iii/iv were added to the domain map. `commencement`
+has IDF 5.91 in this corpus, so it discriminates strongly once a query can reach
+it. Measured: hit@10 89% -> 90%, hit@5 unchanged. The calendar PDF itself is
+still outranked by the /academics pages, which cover more of the question's
+words - the same shape as every remaining miss - but the class-commencement
+circular now surfaces inside the top 10, which is what a 10-passage prompt sees.
+
+**More passages do NOT convert into more accuracy** (2026-10-18). This was the
+one lever the eight rejected reranking ideas left: retrieval puts the answer in
+the top 5 for 83% of questions but the top 10 for 90%, the prompt's character
+budget is fixed, so ten passages cost no context - each is simply trimmed harder
+by rag/focus.py. Measured end-to-end, 26 questions, fusion, deterministic:
+
+  5 passages (650 chars each)   23/26 = 88%   answerable 19/22   median 22 s
+  10 passages (325 chars each)  22/26 = 85%   answerable 18/22   median 30 s
+  20 passages (220 chars each)  17/26 = 65%   answerable 15/22
+
+The retrieval gain does not reach the answer. One question flipped and it flipped
+the wrong way: "How is my CGPA worked out?" was answered "My Big Idea Competition
+- annual flagship competition that invites students to pitch breakthrough
+ideas", which is a passage the 10-deep prompt added and the model preferred.
+That is distraction, and it is the known behaviour of a small instruction-tuned
+model given many short snippets. Latency also rose 36% on prefill.
+
+So topk stays 5. The conclusion worth keeping is where the bottleneck now is: it
+is no longer retrieval. On the 22 answerable questions the model gets 19 right
+from 5 passages, and the failures are not "the answer was not retrieved" but
+"the answer was retrieved and not used" - Q22 had the library page at slot 3 and
+was answered from the Administrative Manual at slots 1-2.
+
+**Ordering the chosen passages by their best sentence: rejected** (2026-10-18).
+Reranking the POOL by best sentence was already rejected on retrieval (hit@5 83%
+-> 81%), but ordering the five passages retrieval had ALREADY chosen is a
+different question that hit@5 cannot answer at all - the set is identical, only
+the reading order changes - and this model answers from the early passages. It
+was built behind `VJLM_PROMPT_ORDER=sent` and measured end-to-end: 23/26 both
+ways, with the SAME three questions failing (19, 20, 22). Even Q22, the question
+it was built for, did not move: the Administrative Manual passages that
+outranked the library page also score well sentence-wise. Ninth idea rejected.
+
+`DOC_CAP_FRAC` default is 1.0 - see the correction below.
+
+### RAG-EVAL-005 - what the broad question set says, and why 88% was optimistic
+2026-10-18
+
+The 26-question student test reports 23/26 = 88% (fusion, 5 passages). Running
+the SAME end-to-end path over all 98 corpus-verified questions
+(`evaluation/answer_accuracy.py`) gives 56/98 = 57% by strict pattern match. That
+gap is partly a measurement artifact and partly real, and both halves matter.
+
+**The measurement artifact.** The 98 questions' gold patterns were written to
+match CHUNK TEXT, for scoring retrieval, and they do not match natural answers.
+Hand-grading all 42 failures: 7 are correct answers scored wrong - "O
+(Outstanding) | 10" against `Outstanding\s*10`, "Controller of Examinations
+(COE)" against `CoE\s+Controller of Examinations`, "supplementary semester end
+examination" against `Supplementary Examinations`, "established in 2006" against
+`Established 2006`. A further 4 are defensible but unprovable. So the real
+figure is about 63/98 = 64%, up to 68% if the ambiguous ones count.
+
+**The real gap.** 31 answers are genuinely wrong, in three classes:
+  - 17 are retrieval misses - the answer was never in the prompt. These are the
+    same misses hit@5 reports (83%), and the passages the model answered from
+    instead are plainly off-topic: "what is the longest I can take to finish
+    B.Tech" was answered from a student testimonial, "when was the society that
+    runs the college started" from the VLSI Society of India.
+  - 8 are extraction failures: the right document reached the prompt and the
+    model took the wrong field out of a table - CIE/SEE marks, the M.Tech annual
+    fee, the total sanctioned intake, the name of a centre's head.
+  - 8 are abstentions where the clause exists in the corpus but ranked 6th-36th,
+    so the model correctly refused on what it was shown (n04 35% SEE at rank 8,
+    n14 supplementary exams at 36).
+
+Two honest consequences. First, **the 88% is a tuned figure**: those 26 questions
+and their answer-shaped patterns were used while developing the retriever, and
+the v2 questions - written from the corpus afterwards and never tuned on - score
+39% strict. Second, **answer accuracy is no longer limited by retrieval alone**:
+the model converts roughly 77% of its retrieval hits into correct answers, and
+the 8 table-extraction failures are generation, not retrieval. A 90% claim needs
+answer-shaped gold on all 98 questions before it can even be measured.
+
+### CORRECTION to the per-document cap (2026-10-18, same day)
+
+The claim above that a share-based per-document cap "costs retrieval nothing -
+hit@5/@10/@20/@100 are 83/89/94/98% at cap 1.0, 0.6 and 0.4 alike" was measured
+wrongly, and the conclusion drawn from it was wrong.
+
+`evaluation/depth_curve.py` retrieves ONCE at depth 100 and slices. The caps
+scale with the request (`grow = topk // 5`), so at depth 100 they do not bind at
+all - which is why every cap setting measured identical. The cap only bites on
+the 5-passage prompt the app actually builds, and that case was never measured
+on the broad set. `evaluation/hit_at_prompt.py` now asks for topk passages the
+way the app does:
+
+  topk=5, 98 questions      flat cap 0.4   77/98 = 79%
+                            flat cap 0.6   77/98 = 79%
+                            family-aware   79/98 = 81%
+                            no cap         81/98 = 83%
+
+The cap was costing four questions (r03, p02, n02, n17). n17's answer is at
+overall rank 5 and every passage above it is another clause of the same
+rulebook, so a cap of two per document replaced clauses 3-5 with worse
+documents, and the model then abstained on a question whose answer retrieval had
+found. A rulebook question is answered BY the rulebook, several clauses of it.
+
+The monopolisation this cap was introduced to prevent does not actually need it:
+with no per-document cap, "where can I study quietly and borrow books" still
+shows two library passages, because the per-FAMILY quota (`scope.quota`) already
+limits one family to three slots. That quota was the working diversity mechanism
+all along. `DOC_CAP_FRAC` is therefore 1.0, with the family-aware exemption kept
+for anyone who lowers it.
+
+The general lesson, which cost most of a day: measure the configuration the
+system actually serves. A recall curve and a prompt are different questions, and
+six cap measurements agreed with each other only because none of them exercised
+the cap.
