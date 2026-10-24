@@ -3,101 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VJLM — Vignana Jyothi Language Model</title>
+<title>VJLM — VNRVJIET Campus Assistant</title>
+<script>
+  try {
+    document.documentElement.dataset.theme = localStorage.getItem("vjlm-theme")
+      || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
+  } catch (e) { document.documentElement.dataset.theme = "light"; }
+</script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+<div class="app">
 
-<header>
-  <div class="brand">
-    <h1>VJLM</h1>
-    <span class="sub">Vignana Jyothi Language Model</span>
-  </div>
+  <aside class="side" id="side" aria-label="Settings">
+    <div class="side-top"><button class="btn-new" id="new">＋ New chat</button></div>
 
-  <span class="chip" id="chip-model" title="Active model and knowledge-base size">
-    <span class="dot"></span><span id="model-txt">loading…</span>
-  </span>
-
-  <span class="chip act" id="chip-sync" title="Click to refresh the knowledge base now">
-    <span class="dot"></span><span id="sync-txt">…</span>
-  </span>
-
-  <span class="chip" id="chip-llama" title="Local llama-server status">
-    <span class="dot"></span><span id="llama-txt">…</span>
-  </span>
-
-  <button class="icon-btn" id="theme" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
-</header>
-
-<main id="main">
-  <div class="thread" id="thread">
-    <div class="empty" id="empty">
-      <h2>Ask about VNRVJIET</h2>
-      <p>
-        Answers are generated locally on CPU from the college's own public
-        documents, with a citation for every claim. If the sources don't contain
-        the answer, VJLM says so instead of guessing.
-      </p>
-      <div class="examples" id="examples">
-        <button data-q="What is the attendance requirement?">
-          What is the attendance requirement?
-          <span class="hint">regulations</span>
-        </button>
-        <button data-q="Which regulation applies to third year B.Tech?">
-          Which regulation applies to third year B.Tech?
-          <span class="hint">regulations</span>
-        </button>
-        <button data-q="What are the placement statistics?">
-          What are the placement statistics?
-          <span class="hint">placements</span>
-        </button>
-        <button data-q="What are my internal marks?">
-          What are my internal marks?
-          <span class="hint">should abstain — not public data</span>
-        </button>
-      </div>
-    </div>
-  </div>
-</main>
-
-<footer>
-  <div id="notice-slot"></div>
-  <div class="composer">
-    <div class="controls">
-      <span class="field">
-        <label for="role">Role</label>
-        <select id="role">
+    <div class="side-bot">
+      <label class="field" for="role">Role
+        <select id="role" title="Decides which documents are visible. Access control is applied before ranking, not in the prompt.">
           <option value="student">Student</option>
           <option value="faculty">Faculty</option>
         </select>
-      </span>
-      <span class="field">
-        <label for="mode">Retrieval</label>
+      </label>
+      <label class="field" for="mode">Retrieval
         <select id="mode" title="Which retriever ranks the passages">
+          <option value="fusion">Fusion: keyword + synonym + semantic (best)</option>
+          <option value="coverage">Coverage</option>
           <option value="hybrid">Hybrid</option>
           <option value="bm25">BM25</option>
           <option value="dense">Dense</option>
-        
-      <option value="coverage">Coverage</option>
-      <option value="lexical">Lexical</option>
-      <option value="hybrid3">Hybrid3</option></select>
-      </span>
-      <span class="chip" id="chip-rbac" title="Access control is applied before ranking, not in the prompt">
-        RBAC filters before retrieval
-      </span>
+          <option value="lexical">Lexical</option>
+          <option value="hybrid3">Hybrid3</option>
+        </select>
+      </label>
+      <div class="row">
+        <button class="ghost" id="theme" aria-label="Switch light or dark theme">◐ Theme</button>
+        <button class="ghost" id="keys">⌨ Shortcuts</button>
+      </div>
+      <p class="foot">Runs on this computer's CPU · no external API</p>
     </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
 
-    <div class="box">
-      <textarea id="q" rows="1" placeholder="Ask about regulations, calendar, placements, departments…"></textarea>
-      <button class="send" id="send">Ask</button>
-    </div>
+  <main class="main">
+    <header class="top">
+      <button class="icon" id="toggle" aria-label="Toggle sidebar">☰</button>
+      <span class="title">VJLM</span>
+      <span class="status" id="status" role="status"></span>
+      <span class="grow"></span>
+      <button class="ghost" id="sync" title="Check the college site for new documents now">Refresh documents</button>
+    </header>
 
-    <div class="hint-row">
-      <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-      <span id="foot-note">local CPU · no external API</span>
-    </div>
-  </div>
-</footer>
+    <section class="scroll" id="scroll">
+      <div class="col" id="msgs" aria-live="polite"></div>
+    </section>
+
+    <footer class="comp">
+      <div class="col">
+        <div class="box">
+          <textarea id="q" rows="1" placeholder="Ask about regulations, calendar, placements, departments…" aria-label="Message"></textarea>
+          <button class="send" id="send" aria-label="Send">↑</button>
+        </div>
+        <p class="trust">Answers are generated locally from official VNRVJIET documents. Verify important details with the college office.</p>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<dialog id="kb">
+  <h3>Keyboard shortcuts</h3>
+  <p>
+    <kbd>/</kbd> focus the message box<br>
+    <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> new chat<br>
+    <kbd>Ctrl</kbd>+<kbd>B</kbd> show / hide sidebar<br>
+    <kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line<br>
+    <kbd>?</kbd> this help
+  </p>
+  <button class="ghost" onclick="this.closest('dialog').close()">Close</button>
+</dialog>
 
 <script src="/static/app.js"></script>
 </body>
