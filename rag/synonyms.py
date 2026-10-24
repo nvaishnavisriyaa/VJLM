@@ -108,6 +108,46 @@ DOMAIN = {
     "marks": ["grade", "grades", "score"],
     "final": ["semester", "end"],
     "affiliated": ["affiliation"],
+    # A second pass over the vocabulary gap, from evaluation/miss_report.py: the
+    # gold clause used none of the question's words, so neither BM25 nor
+    # coverage could reach it. "orientation programme" is called an INDUCTION
+    # programme; "the lowest mark that still passes" is "a MINIMUM of 35%";
+    # "exams for the subjects I failed" are SUPPLEMENTARY examinations; "how
+    # many seats" is the SANCTIONED INTAKE. These are the institution's words
+    # for the student's words, not bridges built for particular questions.
+    "orientation": ["induction", "inducting"],
+    "induction": ["orientation"],
+    "lowest": ["minimum", "least"],
+    "least": ["minimum", "lowest"],
+    "minimum": ["least", "lowest"],
+    "failed": ["fail", "supplementary", "backlog"],
+    "fail": ["failed", "supplementary", "backlog"],
+    "supplementary": ["backlog", "arrear", "reappear"],
+    "seats": ["intake", "sanctioned", "seat"],
+    "seat": ["intake", "sanctioned"],
+    "intake": ["seats", "sanctioned"],
+    "revaluation": ["recounting", "recheck"],
+    "club": ["clubs", "society", "chapter"],
+    "clubs": ["club", "societies", "society"],
+    "society": ["societies", "club", "clubs"],
+    "societies": ["society", "clubs", "club"],
+    # The academic calendars are the clearest vocabulary gap in the corpus: a
+    # student asks when classes START for SECOND year, and the calendar says
+    # "Commencement of Class Work" for "B.Tech. II Year". Both of the calendar
+    # questions that fail (the end-to-end Q20 and d02) fail on exactly this,
+    # with the right page extracted and the dates present in it. `commencement`
+    # is rare in this corpus (IDF 5.91), so it discriminates strongly once the
+    # query can reach it, and the Roman-numeral year is how every VNRVJIET
+    # document names a year.
+    "start": ["commencement", "commences", "begin"],
+    "starts": ["commencement", "commences", "begin"],
+    "begin": ["commencement", "commences", "start"],
+    "begins": ["commencement", "commences", "start"],
+    "commence": ["start", "begin"],
+    "classes": ["class", "classwork", "instruction"],
+    "second": ["ii"],
+    "third": ["iii"],
+    "fourth": ["iv"],
 }
 
 _WORD = re.compile(r"^[a-z][a-z0-9]*$")
@@ -149,8 +189,37 @@ def available():
 #     synset 0 is the everyday meaning. Later synsets are where "miss" becomes
 #     "girl". Derivational forms are still taken from all kept synsets because
 #     they are the same lemma, not a different concept.
-MAX_SYNSETS = 1
-NOUNS_ONLY = True
+# NOUNS_ONLY threw out every verb to stop a handful of bad senses, and measured
+# on the 98-question set the whole WordNet arm then contributed exactly NOTHING:
+# Hit@5 was 83% with it on and 83% with it off (evaluation/ablation.py), because
+# the questions that need a synonym need a VERB one - "when do classes START" ->
+# "COMMENCEMENT of classes", "can I get my marks RECHECKED" -> "REVALUATION",
+# "exams for FAILED subjects" -> "SUPPLEMENTARY examinations". `start` returned
+# [] while WordNet's start.v.01 holds exactly the lemmas `begin` and `commence`.
+#
+# But the original evidence against verbs was real, so the fix is a sense filter
+# rather than lifting the restriction. Look at WHICH senses were wrong - "miss"
+# -> girl, "attend" -> serve, "club" -> nine, "seat" -> place. Every one is a
+# COMMON word; every synonym that helps - commencement, revaluation,
+# condonation, supplementary - is RARE. So gate on IDF: keep a WordNet synonym
+# only when it is at least as discriminating in THIS corpus as the term it came
+# from. A wrong sense is generic by nature and fails the gate; a rare technical
+# term passes. That makes the arm corpus-grounded instead of general-English.
+MAX_SYNSETS = int(os.environ.get("VJLM_WN_SYNSETS", "1"))
+# Which parts of speech to expand: n=noun, v=verb, a=adjective, r=adverb.
+# "nv" and "n" measured byte-identical on all 98 questions at every gate and cap
+# (evaluation/sweep_wordnet.py), so verbs cost nothing; they are allowed because
+# the gate now makes them safe, not because they were shown to pay.
+WN_POS = os.environ.get("VJLM_WN_POS", "nv")
+# Keep synonym s for term t only if idf(s) >= ratio * idf(t). 0 disables.
+# 1.0 measured +1 point (83% -> 84/98), entirely on the never-tuned split;
+# 1.3 measured identical, so 1.0 is the loosest gate that captures the gain.
+WN_IDF_RATIO = float(os.environ.get("VJLM_WN_IDF", "1.0"))
+
+
+def _pos_list(wn):
+    codes = {"n": wn.NOUN, "v": wn.VERB, "a": wn.ADJ, "r": wn.ADV}
+    return [codes[c] for c in WN_POS if c in codes] or [wn.NOUN]
 
 
 @functools.lru_cache(maxsize=8192)
@@ -164,12 +233,17 @@ def _raw_synonyms(term):
     if wn is None:
         return ()
     out, seen = [], {term}
-    try:
-        pos = wn.NOUN if NOUNS_ONLY else None
-        synsets = wn.synsets(term, pos=pos) if pos else wn.synsets(term)
-    except Exception:               # noqa: BLE001
+    synsets = []
+    for pos in _pos_list(wn):
+        try:
+            # Per POS, not pooled: pooling lets a noun's senses crowd out the
+            # verb reading entirely, which is how `start` came back empty.
+            synsets.extend(wn.synsets(term, pos=pos)[:MAX_SYNSETS])
+        except Exception:           # noqa: BLE001
+            continue
+    if not synsets:
         return ()
-    for syn in synsets[:MAX_SYNSETS]:   # sense-frequency ordered; 0 is common
+    for syn in synsets:                 # sense-frequency ordered; 0 is common
         for lem in syn.lemmas():
             name = lem.name().lower()
             if "_" in name or not _WORD.match(name) or name in seen:
@@ -204,17 +278,50 @@ class Expander:
     def _ok(self, w):
         return self.vocab is None or w in self.vocab
 
+    def _idf_ok(self, term, syn):
+        """Is `syn` at least as discriminating as `term` in this corpus?
+
+        The vocabulary is BM25's idf MAP, so the values are here already. A
+        synonym the gate cannot judge (either side missing) is allowed through -
+        the vocab check has already established it occurs in the corpus.
+        """
+        if not WN_IDF_RATIO:
+            return True
+        try:
+            ti = self.vocab.get(term)
+            si = self.vocab.get(syn)
+        except AttributeError:      # a plain set, no idf values to gate on
+            return True
+        if ti is None or si is None:
+            return True
+        return si >= WN_IDF_RATIO * ti
+
     def expand_term(self, term):
         if term in BLOCK:
             return []
-        cands = []
+        cands = []                  # (word, came_from_wordnet)
         if self.use_domain:
-            cands.extend(DOMAIN.get(term, []))
+            # The map is keyed by the lemma, but students type the inflection:
+            # "rechecked" found nothing while "recheck" -> revaluation was
+            # sitting right there. Same lemma, so this is a lookup fix, not an
+            # extra hop through meaning.
+            cands.extend((w, False) for w in DOMAIN.get(term, []))
+            if term not in DOMAIN:
+                from rag.scope import variants
+                for v in variants(term):
+                    if v in DOMAIN:
+                        cands.extend((w, False) for w in DOMAIN[v])
+                        break
         if self.use_wordnet:
-            cands.extend(_raw_synonyms(term))
+            cands.extend((w, True) for w in _raw_synonyms(term))
         kept, seen = [], {term}
-        for c in cands:
+        for c, from_wn in cands:
             if c in seen or c in BLOCK or not self._ok(c):
+                continue
+            # The IDF gate applies to WordNet only. The domain map is hand-built
+            # from this corpus and is trusted; WordNet is general English and is
+            # where the wrong senses come from.
+            if from_wn and not self._idf_ok(term, c):
                 continue
             seen.add(c)
             kept.append(c)

@@ -156,7 +156,12 @@ def index():
 # Kept in sync with rag/retrieve.py WEIGHTS. An unlisted mode silently
 # falls back to "hybrid", which would make a comparison look like it ran
 # when it did not.
-VALID_MODES = ("hybrid", "bm25", "dense", "coverage", "lexical", "hybrid3")
+# How many passages the prompt carries. The prompt's character budget is
+# fixed in rag/retrieve.py:build_prompt, so raising this trims each passage
+# harder instead of growing the context.
+TOPK = int(os.environ.get("VJLM_TOPK", "5"))
+
+VALID_MODES = ("hybrid", "bm25", "dense", "coverage", "lexical", "hybrid3", "fusion")
 ABSTAIN = "I could not find this in the available VNRVJIET sources."
 
 
@@ -203,9 +208,9 @@ def read_query(body):
     role = body.get("role", "student")
     if role not in ("student", "faculty"):
         role = "student"
-    mode = body.get("mode", "hybrid")
+    mode = body.get("mode", "fusion")
     if mode not in VALID_MODES:
-        mode = "hybrid"
+        mode = "fusion"
     return q, role, mode
 
 
@@ -268,7 +273,7 @@ def ask():
                         "citations": [], "t_retrieve": 0.0, "t_gen": 0.0, "mode": mode})
 
     t0 = time.time()
-    chunks = ret.search(q, role=role, topk=5, mode=mode)
+    chunks = ret.search(q, role=role, topk=TOPK, mode=mode)
     t_ret = round(time.time() - t0, 2)
 
     if not chunks:
@@ -338,7 +343,7 @@ def ask_stream():
             return
 
         t0 = time.time()
-        chunks = ret.search(q, role=role, topk=5, mode=mode)
+        chunks = ret.search(q, role=role, topk=TOPK, mode=mode)
         t_ret = round(time.time() - t0, 2)
 
         if not chunks:

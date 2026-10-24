@@ -92,10 +92,19 @@ def focus(query, text, idf, max_chars=650, min_rel=0.25):
     if not su or max(s for s, _, _ in su) == 0:
         return text[:max_chars]
     best = max(s for s, _, _ in su)
-    keep = [x for x in su if x[0] >= max(min_rel, 0.5 * best)]
-    keep.sort(key=lambda x: (-x[0], x[1]))
+    # Units below half the best score go LAST, not away. Dropping them was
+    # costing 14 points: the answer is usually the sentence the question's words
+    # are absent from ("in which area of Hyderabad" is answered by a place
+    # name), so it scores low and was filtered out of a passage retrieval had
+    # correctly selected - answer in the top-5 chunks 83%, answer in the prompt
+    # 69%. The filter also made max_chars inert, since it ran before the budget:
+    # every surviving unit fit, so the prompt sat at 491 tokens of a 4096
+    # context. Ordering query-first is kept (it is what the model answers from);
+    # only the hard drop is gone, and leftover budget now carries the rest.
+    thr = max(min_rel, 0.5 * best)
+    su.sort(key=lambda x: (x[0] < thr, -x[0], x[1]))
     out, n = [], 0
-    for s, pos, u in keep:
+    for s, pos, u in su:
         if n + len(u) > max_chars and out:
             break
         out.append(u)
@@ -201,6 +210,19 @@ def supplement(query, chunks, answer_body, idf, used=(), max_units=5, min_score=
                     hits.append((sc, ci, pos, u))
         for sc, ci, pos, u in sorted(hits, reverse=True)[:2]:
             add(ci, u)
+
+    # 1c. the best-matching sentence of the passage the answer came from, when
+    # the answer did not say it. The model copies a passage's FIRST sentence;
+    # for "annual tuition fee for Category-A" that was the table caption, while
+    # the sentence holding the figure scored 1.0 against the question. Only a
+    # near-complete match qualifies, and only one sentence is added.
+    for ci in list(used)[:1]:
+        best = None
+        for sc, pos, u in scored_units(query, chunks[ci]["text"], idf):
+            if sc >= 0.9 and _prose(u) and covered(u) < 0.7 and (best is None or sc > best[0]):
+                best = (sc, u)
+        if best:
+            add(ci, best[1])
 
     # 2. question-matching sentences elsewhere
     cands = []
