@@ -16,7 +16,7 @@ REM     never existed on this machine, so the "fallback" only ever turned a
 REM     clear error into a confusing one.
 REM
 setlocal
-set LLAMA=%~dp0llama\cpu\llama-server.exe
+set LLAMA=%~dp0llama\llama-server.exe
 if not exist "%LLAMA%" (
   echo ERROR: %LLAMA% not found.
   echo Download the pinned llama.cpp build - see runtime\llama\PINNED_TAG.txt
@@ -29,7 +29,8 @@ if "%VJLM_THREADS%"=="" set VJLM_THREADS=20
 
 REM Model: explicit argument wins. Otherwise the build selected by QUANT-001.
 set MODEL=%~1
-if "%MODEL%"=="" set MODEL=%~dp0..\quantization\builds\gguf\%VJLM_MODEL%
+if "%VJLM_MODEL%"=="" set VJLM_MODEL=vjlm-llama3b-Q6_K-imat.gguf
+if "%MODEL%"=="" set MODEL=%~dp0..\quantization\builds\%VJLM_MODEL%
 if "%MODEL%"=="" goto :nomodel
 if not exist "%MODEL%" (
   echo ERROR: model not found: %MODEL%
@@ -48,5 +49,5 @@ goto :eof
 :nomodel
 echo ERROR: no model specified.
 echo   usage: start_llama.cmd path\to\model.gguf
-echo   or:    set VJLM_MODEL=vjlm-llama3b-Q5_K_M.gguf ^&^& start_llama.cmd
+echo   or:    set VJLM_MODEL=vjlm-llama3b-Q6_K-imat.gguf ^&^& start_llama.cmd
 exit /b 1
